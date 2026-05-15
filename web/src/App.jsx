@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import Globe from './pages/Globe'
 import Country from './pages/Country'
-import Portfolio from './pages/Portfolio'
+import Markets from './pages/Markets'
 import Analyst from './pages/Analyst'
 
 function Nav() {
@@ -14,7 +14,7 @@ function Nav() {
          style={{ background: 'rgba(10,10,15,0.95)', borderColor: '#1e1e2e', backdropFilter: 'blur(12px)' }}>
       <span className="text-sm font-semibold text-indigo-400 tracking-widest mr-4 font-mono">SOVEREIGN</span>
       <NavLink to="/" end className={({ isActive }) => isActive ? active : inactive}>Globe</NavLink>
-      <NavLink to="/portfolio" className={({ isActive }) => isActive ? active : inactive}>Portfolio</NavLink>
+      <NavLink to="/markets" className={({ isActive }) => isActive ? active : inactive}>Markets</NavLink>
       <NavLink to="/analyst" className={({ isActive }) => isActive ? active : inactive}>Analyst</NavLink>
     </nav>
   )
@@ -28,7 +28,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Globe />} />
           <Route path="/country/:iso3" element={<Country />} />
-          <Route path="/portfolio" element={<Portfolio />} />
+          <Route path="/markets" element={<Markets />} />
           <Route path="/analyst" element={<Analyst />} />
         </Routes>
       </div>

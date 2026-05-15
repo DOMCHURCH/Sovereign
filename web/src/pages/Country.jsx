@@ -4,7 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell, LabelList,
 } from 'recharts'
-import { api } from '../api'
+import { api, streamAnalyst } from '../api'
 import RiskBadge from '../components/RiskBadge'
 import RiskGauge from '../components/RiskGauge'
 import AlertFeed from '../components/AlertFeed'
@@ -46,6 +46,8 @@ export default function Country() {
   const [contagion, setContagion] = useState(null)
   const [impact, setImpact] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [aiInsight, setAiInsight] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -62,6 +64,16 @@ export default function Country() {
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [iso3])
+
+  useEffect(() => {
+    if (!country) return
+    setAiInsight('')
+    setAiLoading(true)
+    const prompt = `Give me a concise 3-sentence risk assessment of ${country.name} for an institutional investor. Risk score: ${country.sovereign_risk_score?.toFixed(1)} (${country.risk_tier}). Top drivers: ${country.top_risk_drivers?.join(', ') || 'none'}. Inflation: ${country.inflation_pct}%, debt/GDP: ${country.govt_debt_pct_gdp}%, political stability: ${country.political_stability_score?.toFixed(2)}, sanctions entities: ${country.sanctions_entity_count}.`
+    streamAnalyst(prompt, [], country.iso3, (chunk) => {
+      setAiInsight(prev => prev + chunk)
+    }, () => setAiLoading(false)).catch(() => setAiLoading(false))
+  }, [country?.iso3])
 
   if (loading) {
     return (
@@ -129,6 +141,17 @@ export default function Country() {
           <RiskGauge score={country.sovereign_risk_score} size={96} />
           <div className="text-xs text-slate-500 mt-1">Risk Score / 100</div>
         </div>
+      </div>
+
+      {/* AI Risk Assessment */}
+      <div className="rounded-xl border p-4" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
+        <div className="flex items-center gap-2 mb-2">
+          <h3 className="text-xs font-mono text-indigo-400 uppercase tracking-widest">AI Risk Assessment</h3>
+          {aiLoading && <span className="text-xs text-slate-600 animate-pulse">analyzing...</span>}
+        </div>
+        <p className="text-sm text-slate-300 leading-relaxed">
+          {aiInsight || (aiLoading ? '' : 'No analysis available.')}
+        </p>
       </div>
 
       {/* Top row: sub-scores + macro stats */}

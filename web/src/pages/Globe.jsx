@@ -94,8 +94,8 @@ export default function Globe() {
   const handleGeoClick = useCallback((geo) => {
     const numId = parseInt(geo.id)
     const iso3 = NUM_TO_ISO3[numId]
-    if (iso3 && byIso3[iso3]) navigate(`/country/${iso3}`)
-  }, [byIso3, navigate])
+    if (iso3) navigate(`/country/${iso3}`)
+  }, [navigate])
 
   const handleGeoEnter = useCallback((geo, evt) => {
     const numId = parseInt(geo.id)
