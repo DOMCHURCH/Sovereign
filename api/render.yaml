@@ -6,9 +6,6 @@ services:
     buildCommand: >
       pip install -r requirements.txt &&
       python -m textblob.download_corpora &&
-      npm --prefix ../web ci &&
-      npm --prefix ../web run build &&
-      cp -r ../web/dist ./dist &&
       python seed.py &&
       python analytics/country_risk.py &&
       python analytics/contagion.py &&

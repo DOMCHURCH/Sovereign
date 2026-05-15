@@ -5,7 +5,7 @@ __pycache__/
 *.duckdb
 *.duckdb.wal
 node_modules/
-dist/
+web/dist/
 .vite/
 *.local
 .DS_Store
