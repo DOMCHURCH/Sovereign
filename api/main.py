@@ -146,6 +146,24 @@ def _top_drivers(sub: Optional[dict]) -> list[str]:
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
+@app.get("/")
+def root():
+    return {
+        "service": "Sovereign Geopolitical Risk Intelligence Platform",
+        "version": "1.0.0",
+        "endpoints": {
+            "health": "/health",
+            "countries": "/countries",
+            "country_detail": "/countries/{iso3}",
+            "alerts": "/alerts",
+            "portfolio": "/portfolio",
+            "analyst": "/analyst",
+            "graph": "/graph",
+        },
+        "docs": "/docs",
+    }
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
