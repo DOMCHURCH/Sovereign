@@ -48,6 +48,8 @@ export default function Country() {
   const [loading, setLoading] = useState(true)
   const [aiInsight, setAiInsight] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
+  const [news, setNews] = useState([])
+  const [newsLoading, setNewsLoading] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -74,6 +76,16 @@ export default function Country() {
       setAiInsight(prev => prev + chunk)
     }, () => setAiLoading(false)).catch(() => setAiLoading(false))
   }, [country?.iso3])
+
+  useEffect(() => {
+    if (!iso3) return
+    setNews([])
+    setNewsLoading(true)
+    api.countryNews(iso3)
+      .then(setNews)
+      .catch(() => {})
+      .finally(() => setNewsLoading(false))
+  }, [iso3])
 
   if (loading) {
     return (
@@ -276,6 +288,44 @@ export default function Country() {
             <p className="text-xs text-slate-500">No contagion data — run ingest first</p>
           )}
         </div>
+      </div>
+
+      {/* News Feed */}
+      <div className="rounded-xl border p-4" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest">Latest News</h3>
+          {newsLoading && <span className="text-xs text-slate-600 animate-pulse">fetching...</span>}
+        </div>
+        {news.length === 0 && !newsLoading ? (
+          <p className="text-xs text-slate-600">No news available — add NEWS_API_KEY to enable live headlines.</p>
+        ) : (
+          <div className="space-y-3">
+            {news.map((article, i) => (
+              <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
+                 className="block hover:bg-white/5 rounded-lg p-2 -mx-2 transition-colors group">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-slate-300 group-hover:text-white transition-colors leading-snug line-clamp-2">
+                      {article.title}
+                    </p>
+                    {article.description && (
+                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{article.description}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-600">
+                  <span>{article.source}</span>
+                  {article.published_at && (
+                    <>
+                      <span>·</span>
+                      <span>{new Date(article.published_at).toLocaleDateString()}</span>
+                    </>
+                  )}
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

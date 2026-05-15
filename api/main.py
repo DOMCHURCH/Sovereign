@@ -1,7 +1,7 @@
 import os
 import json
 import pathlib
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, APIRouter
@@ -189,6 +189,43 @@ def get_country_history(iso3: str):
     return [{"score": r[0], "tier": r[1], "date": r[2].isoformat() if hasattr(r[2], "isoformat") else str(r[2])} for r in rows]
 
 
+@router.get("/countries/{iso3}/news")
+def get_country_news(iso3: str):
+    iso3 = iso3.upper()
+    country_name = COUNTRY_METADATA.get(iso3, (iso3, ""))[0]
+    news_api_key = os.getenv("NEWS_API_KEY", "")
+    if not news_api_key:
+        return []
+    import requests as req
+    from_date = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    try:
+        resp = req.get(
+            "https://newsapi.org/v2/everything",
+            params={
+                "q": f'"{country_name}" economy OR sanctions OR politics OR crisis',
+                "from": from_date,
+                "language": "en",
+                "sortBy": "relevancy",
+                "pageSize": 8,
+                "apiKey": news_api_key,
+            },
+            timeout=10,
+        )
+        articles = resp.json().get("articles", [])
+        return [
+            {
+                "title": a.get("title", ""),
+                "description": a.get("description", ""),
+                "url": a.get("url", ""),
+                "source": a.get("source", {}).get("name", ""),
+                "published_at": a.get("publishedAt", ""),
+            }
+            for a in articles if a.get("title")
+        ]
+    except Exception:
+        return []
+
+
 @router.get("/countries/{iso3}/contagion")
 def get_country_contagion(iso3: str):
     iso3 = iso3.upper()
@@ -256,6 +293,13 @@ def list_alerts():
 def acknowledge_alert(alert_id: str):
     conn = get_conn()
     conn.execute("UPDATE alerts SET acknowledged = TRUE WHERE id = ?", [alert_id])
+    return {"acknowledged": True}
+
+
+@router.post("/alerts/acknowledge-all")
+def acknowledge_all_alerts():
+    conn = get_conn()
+    conn.execute("UPDATE alerts SET acknowledged = TRUE WHERE acknowledged = FALSE")
     return {"acknowledged": True}
 
 
