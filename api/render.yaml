@@ -2,7 +2,7 @@ services:
   - type: web
     name: sovereign-api
     runtime: python
-    buildCommand: pip install -r requirements.txt && python -m textblob.download_corpora
+    buildCommand: pip install -r requirements.txt && python -m textblob.download_corpora && python seed.py && python analytics/country_risk.py && python analytics/contagion.py && python analytics/alerts.py
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: ANTHROPIC_API_KEY
