@@ -28,6 +28,7 @@ export const api = {
   portfolioStress: (country, shock) => post('/portfolio/stress', { country, shock_magnitude: shock }),
   countryNews: (iso3) => get(`/countries/${iso3}/news`),
   acknowledgeAllAlerts: () => post('/alerts/acknowledge-all', {}),
+  conflicts: () => get('/conflicts'),
   graph: () => get('/graph'),
   ingestStatus: () => get('/ingest/status'),
   runIngest: () => post('/ingest/run', {}),

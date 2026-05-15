@@ -226,7 +226,51 @@ def get_country_news(iso3: str):
         return []
 
 
-@router.get("/countries/{iso3}/contagion")
+# ── Conflict zones ────────────────────────────────────────────────────────────
+# Curated list of active armed conflicts as of 2025/2026.
+# intensity: major | significant | minor
+# type: interstate | civil_war | insurgency | territorial
+
+_CONFLICTS = [
+    {"id":"ukraine","name":"Russia–Ukraine War","lat":49.0,"lng":32.0,"intensity":"major","type":"interstate","parties":"Russia vs. Ukraine","since":2022,"countries":["UKR","RUS"],"description":"Full-scale invasion with active frontlines across eastern and southern Ukraine."},
+    {"id":"gaza","name":"Israel–Gaza War","lat":31.4,"lng":34.3,"intensity":"major","type":"interstate","parties":"Israel vs. Hamas","since":2023,"countries":["ISR"],"description":"Israeli military operations in the Gaza Strip following Hamas attacks of Oct 2023."},
+    {"id":"sudan","name":"Sudan Civil War","lat":15.5,"lng":30.0,"intensity":"major","type":"civil_war","parties":"SAF vs. RSF","since":2023,"countries":["SDN"],"description":"War between the Sudanese Armed Forces and the Rapid Support Forces militia, causing one of the world's largest displacement crises."},
+    {"id":"myanmar","name":"Myanmar Civil War","lat":20.5,"lng":95.5,"intensity":"major","type":"civil_war","parties":"Junta vs. resistance coalitions","since":2021,"countries":["MMR"],"description":"Armed resistance against military junta following 2021 coup. Multiple ethnic armed organisations fighting across the country."},
+    {"id":"drc-east","name":"DRC Eastern Conflict","lat":-1.5,"lng":28.8,"intensity":"major","type":"civil_war","parties":"FARDC/MONUSCO vs. M23/Rwanda","since":2012,"countries":["COD"],"description":"M23 rebels backed by Rwanda hold significant territory in North Kivu, ongoing since 2022 resurgence."},
+    {"id":"yemen","name":"Yemen War","lat":15.2,"lng":44.8,"intensity":"significant","type":"civil_war","parties":"Houthis vs. Saudi-led coalition","since":2015,"countries":["YEM","SAU"],"description":"Houthi forces control northern Yemen. Ongoing Houthi attacks on Red Sea shipping lanes."},
+    {"id":"ethiopia-amhara","name":"Ethiopia – Amhara Conflict","lat":11.5,"lng":38.0,"intensity":"significant","type":"civil_war","parties":"ENDF vs. FANO militia","since":2023,"countries":["ETH"],"description":"Armed conflict between Ethiopian forces and Amhara regional militias following disarmament attempts."},
+    {"id":"somalia","name":"Somalia – Al-Shabaab","lat":4.5,"lng":44.0,"intensity":"significant","type":"insurgency","parties":"FGS/ATMIS vs. Al-Shabaab","since":2006,"countries":["SOM"],"description":"Al-Shabaab controls rural areas and launches attacks on Mogadishu and military positions."},
+    {"id":"sahel-mali","name":"Mali – Jihadist Insurgency","lat":17.0,"lng":-2.0,"intensity":"significant","type":"insurgency","parties":"FAMA/Wagner vs. JNIM/GSIM/ISGS","since":2012,"countries":["MLI"],"description":"JNIM and ISGS control large swaths of central and northern Mali. Massacres and mass displacement ongoing."},
+    {"id":"sahel-burkina","name":"Burkina Faso – Jihadist Insurgency","lat":12.5,"lng":-1.5,"intensity":"significant","type":"insurgency","parties":"FAMA vs. JNIM/ISGS","since":2015,"countries":["BFA"],"description":"Jihadist groups control ~40% of Burkina Faso territory. Severe humanitarian crisis."},
+    {"id":"sahel-niger","name":"Niger – Sahel Insurgency","lat":15.5,"lng":9.0,"intensity":"significant","type":"insurgency","parties":"Niger armed forces vs. ISGS/JNIM","since":2017,"countries":["NER"],"description":"Ongoing attacks in Tillabéri and Tahoua regions, worsened after 2023 military coup."},
+    {"id":"nigeria-ne","name":"Nigeria – Boko Haram / ISWAP","lat":12.0,"lng":13.5,"intensity":"significant","type":"insurgency","parties":"Nigerian forces vs. ISWAP/JAS","since":2009,"countries":["NGA"],"description":"ISWAP active in Lake Chad Basin. Banditry and kidnappings widespread in northwest."},
+    {"id":"mozambique","name":"Mozambique – Cabo Delgado","lat":-12.5,"lng":40.5,"intensity":"significant","type":"insurgency","parties":"Mozambican/SADC forces vs. ISCAP","since":2017,"countries":["MOZ"],"description":"ISIS-affiliated insurgency in Cabo Delgado gas-rich province. Over 1M displaced."},
+    {"id":"afghanistan","name":"Afghanistan – IS-K Insurgency","lat":33.5,"lng":66.0,"intensity":"significant","type":"insurgency","parties":"Taliban vs. Islamic State Khorasan","since":2021,"countries":["AFG"],"description":"IS-K attacks on Taliban administration, Hazara minorities, and foreign interests."},
+    {"id":"pakistan-ttp","name":"Pakistan – TTP Insurgency","lat":33.0,"lng":70.0,"intensity":"significant","type":"insurgency","parties":"Pakistan Army vs. TTP","since":2007,"countries":["PAK"],"description":"Tehrik-i-Taliban Pakistan conducts attacks across KP province and tribal areas."},
+    {"id":"syria","name":"Syria – Ongoing Conflict","lat":35.0,"lng":38.5,"intensity":"significant","type":"civil_war","parties":"Multiple factions","since":2011,"countries":["SYR"],"description":"Multiple armed groups control different regions. Turkish forces in north, US-backed SDF in northeast, remnant IS cells active."},
+    {"id":"iraq-isis","name":"Iraq – ISIS Remnants","lat":34.5,"lng":43.5,"intensity":"minor","type":"insurgency","parties":"ISF vs. IS cells","since":2014,"countries":["IRQ"],"description":"Residual Islamic State cells in Anbar, Kirkuk and Diyala provinces conducting guerrilla attacks."},
+    {"id":"westbank","name":"West Bank Violence","lat":31.9,"lng":35.2,"intensity":"significant","type":"territorial","parties":"Israeli forces vs. Palestinian militants","since":2022,"countries":["ISR"],"description":"Significantly escalated raids, settler violence and militant attacks across the West Bank."},
+    {"id":"lebanon-south","name":"Lebanon – Post-War Instability","lat":33.6,"lng":35.6,"intensity":"minor","type":"territorial","parties":"Israeli forces / Hezbollah remnants","since":2024,"countries":["LBN","ISR"],"description":"Post-ceasefire instability. Sporadic clashes near south Lebanon border."},
+    {"id":"colombia","name":"Colombia – ELN / FARC Dissidents","lat":5.5,"lng":-74.0,"intensity":"minor","type":"insurgency","parties":"Colombian forces vs. ELN/FARC-EMC","since":2016,"countries":["COL"],"description":"ELN and FARC dissident groups control coca-growing regions. Peace talks stalled."},
+    {"id":"haiti","name":"Haiti – Gang Crisis","lat":18.8,"lng":-72.3,"intensity":"significant","type":"civil_war","parties":"Kenyan-led MSS vs. armed gangs","since":2021,"countries":["HTI"],"description":"Armed gangs control >80% of Port-au-Prince. Multinational Security Support mission deployed."},
+    {"id":"cameroon","name":"Cameroon – Anglophone Crisis","lat":5.8,"lng":10.2,"intensity":"minor","type":"civil_war","parties":"Cameroon forces vs. Ambazonian separatists","since":2017,"countries":["CMR"],"description":"Anglophone separatist conflict in NW and SW regions. Over 700,000 displaced."},
+    {"id":"car","name":"CAR – Armed Groups","lat":6.5,"lng":20.0,"intensity":"minor","type":"civil_war","parties":"FACA/Wagner vs. CPC coalition","since":2012,"countries":["CAF"],"description":"Coalition of armed groups controls rural areas despite Russian Wagner Group deployment."},
+    {"id":"south-sudan","name":"South Sudan – Renewed Tensions","lat":7.0,"lng":30.0,"intensity":"minor","type":"civil_war","parties":"Government vs. SPLM-IO","since":2013,"countries":["SSD"],"description":"Peace deal fraying; inter-communal violence and clashes between armed factions continuing."},
+    {"id":"kashmir","name":"Kashmir – India-Pakistan Tensions","lat":34.0,"lng":74.5,"intensity":"minor","type":"territorial","parties":"India vs. Pakistan (LOC)","since":1947,"countries":["IND","PAK"],"description":"Cross-border infiltration and militant attacks. Escalated tensions following 2025 Pahalgam attack."},
+    {"id":"taiwan-strait","name":"Taiwan Strait Tensions","lat":23.5,"lng":119.5,"intensity":"minor","type":"territorial","parties":"PRC vs. Taiwan/USA","since":1949,"countries":["CHN","TWN"],"description":"Increasing Chinese PLA military exercises around Taiwan. US naval presence maintained."},
+    {"id":"south-china-sea","name":"South China Sea Disputes","lat":13.0,"lng":115.0,"intensity":"minor","type":"territorial","parties":"China vs. Philippines/Vietnam/Malaysia","since":1970,"countries":["CHN","PHL","VNM"],"description":"Ongoing Chinese coast guard confrontations with Philippine vessels near Spratly Islands."},
+    {"id":"nagorno-karabakh","name":"Armenia – Post-Karabakh Tensions","lat":40.2,"lng":46.0,"intensity":"minor","type":"territorial","parties":"Armenia vs. Azerbaijan","since":2020,"countries":["ARM","AZE"],"description":"Post-2023 ceasefire tensions remain. Armenian border security disputed."},
+    {"id":"philippines","name":"Philippines – Abu Sayyaf / NPA","lat":7.5,"lng":124.0,"intensity":"minor","type":"insurgency","parties":"AFP vs. Abu Sayyaf/NPA","since":1969,"countries":["PHL"],"description":"Abu Sayyaf kidnappings in Sulu Archipelago. NPA communist insurgency in rural Mindanao."},
+    {"id":"kenya-bandits","name":"Kenya – Bandit Conflicts","lat":1.5,"lng":36.5,"intensity":"minor","type":"insurgency","parties":"KDF vs. armed pastoralists","since":2019,"countries":["KEN"],"description":"Armed clashes and cattle rustling in Turkana, Baringo and Laikipia counties."},
+]
+
+
+@router.get("/conflicts")
+def get_conflicts():
+    return _CONFLICTS
+
+
+
 def get_country_contagion(iso3: str):
     iso3 = iso3.upper()
     conn = get_conn()

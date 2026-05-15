@@ -86,6 +86,10 @@ function getIso3(feat) {
   return (iso && iso !== '-99') ? iso : (feat?.properties?.ADM0_A3 || null)
 }
 
+const CONFLICT_COLORS = { major: '#ff4444', significant: '#ff8c00', minor: '#ffd700' }
+const CONFLICT_ALT    = { major: 0.07, significant: 0.045, minor: 0.025 }
+const CONFLICT_RADIUS = { major: 0.55, significant: 0.38, minor: 0.22 }
+
 // Cache GeoJSON at module level so it survives navigation (no CDN round-trip on remount)
 let _geoCache = null
 
@@ -97,6 +101,8 @@ export default function Globe() {
   const [hovered, setHovered] = useState(null)
   const [geoData, setGeoData] = useState(_geoCache || [])
   const [dims, setDims] = useState({ w: window.innerWidth - 288, h: window.innerHeight - 48 })
+  const [conflicts, setConflicts] = useState([])
+  const [showConflicts, setShowConflicts] = useState(true)
   const globeRef = useRef(null)
   const navigate = useNavigate()
 
@@ -105,6 +111,7 @@ export default function Globe() {
     api.countries().then(d => { setCountries(d); setLastRefresh(new Date()) }).catch(() => {})
     api.alerts().then(setAlerts).catch(() => {})
     api.portfolioImpact().then(setImpact).catch(() => {})
+    api.conflicts().then(setConflicts).catch(() => {})
 
     const t = setInterval(() => {
       api.countries().then(d => { setCountries(d); setLastRefresh(new Date()) }).catch(() => {})
@@ -234,6 +241,28 @@ export default function Globe() {
   // Stable stroke color — must not be inline arrow or it recreates every render
   const polygonStroke = useCallback(() => 'rgba(148,163,184,0.15)', [])
 
+  const conflictColor  = useCallback(d => CONFLICT_COLORS[d.intensity] || '#ffd700', [])
+  const conflictAlt    = useCallback(d => CONFLICT_ALT[d.intensity]    || 0.03, [])
+  const conflictRadius = useCallback(d => CONFLICT_RADIUS[d.intensity] || 0.3, [])
+
+  const conflictLabel = useCallback(d => {
+    const color = CONFLICT_COLORS[d.intensity] || '#ffd700'
+    const typeLabel = { interstate: 'Interstate War', civil_war: 'Civil War', insurgency: 'Insurgency', territorial: 'Territorial Dispute' }[d.type] || d.type
+    return `<div style="background:rgba(10,8,18,0.97);border:1px solid ${color}55;border-radius:9px;padding:11px 14px;font-family:monospace;min-width:200px;max-width:260px;box-shadow:0 4px 24px rgba(0,0,0,0.6)">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+        <span style="width:8px;height:8px;border-radius:50%;background:${color};box-shadow:0 0 8px ${color};flex-shrink:0"></span>
+        <span style="color:#f1f5f9;font-size:13px;font-weight:700">${d.name}</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+        <span style="font-size:10px;padding:2px 7px;border-radius:4px;background:${color}22;color:${color};border:1px solid ${color}44;text-transform:uppercase;letter-spacing:0.05em">${d.intensity}</span>
+        <span style="font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(255,255,255,0.06);color:#94a3b8;border:1px solid rgba(255,255,255,0.1)">${typeLabel}</span>
+      </div>
+      <div style="color:#94a3b8;font-size:11px;margin-bottom:4px">⚔️ ${d.parties}</div>
+      <div style="color:#64748b;font-size:10px;line-height:1.5">${d.description}</div>
+      <div style="color:#475569;font-size:10px;margin-top:5px">Since ${d.since}</div>
+    </div>`
+  }, [])
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: '#070710' }}>
       {/* Globe area */}
@@ -257,6 +286,14 @@ export default function Globe() {
           onPolygonClick={handleClick}
           onPolygonHover={handleHover}
           polygonsTransitionDuration={200}
+          pointsData={showConflicts ? conflicts : []}
+          pointLat="lat"
+          pointLng="lng"
+          pointColor={conflictColor}
+          pointAltitude={conflictAlt}
+          pointRadius={conflictRadius}
+          pointLabel={conflictLabel}
+          pointsTransitionDuration={400}
           ringsData={ringsData}
           ringColor={r => r.tier === 'severe' ? '#ef444488' : '#f9731666'}
           ringMaxRadius={r => r.tier === 'severe' ? 4 : 3}
@@ -365,8 +402,8 @@ export default function Globe() {
           </div>
         </div>
 
-        {/* Legend */}
-        <div className="px-4 py-3 border-t" style={{ borderColor: '#1e1e2e' }}>
+        {/* Legend + conflict toggle */}
+        <div className="px-4 py-3 border-t space-y-2.5" style={{ borderColor: '#1e1e2e' }}>
           <div className="flex items-center gap-3 text-xs font-mono flex-wrap">
             {[['low', TIER_COLORS.low], ['elevated', TIER_COLORS.elevated], ['high', TIER_COLORS.high], ['severe', TIER_COLORS.severe]].map(([t, c]) => (
               <span key={t} className="flex items-center gap-1">
@@ -374,6 +411,27 @@ export default function Globe() {
                 <span className="text-slate-500">{t}</span>
               </span>
             ))}
+          </div>
+          {/* Conflict zones toggle */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-mono">
+              <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#ff4444', boxShadow: '0 0 5px #ff4444' }} />
+              <span className="text-slate-400">Conflict zones</span>
+              {conflicts.length > 0 && (
+                <span className="text-slate-600">({conflicts.length})</span>
+              )}
+            </div>
+            <button
+              onClick={() => setShowConflicts(v => !v)}
+              className="text-xs font-mono px-2 py-0.5 rounded transition-all"
+              style={{
+                background: showConflicts ? 'rgba(255,68,68,0.15)' : 'rgba(255,255,255,0.04)',
+                color: showConflicts ? '#ff6666' : '#475569',
+                border: `1px solid ${showConflicts ? 'rgba(255,68,68,0.3)' : 'rgba(255,255,255,0.08)'}`,
+              }}
+            >
+              {showConflicts ? 'ON' : 'OFF'}
+            </button>
           </div>
         </div>
       </div>
