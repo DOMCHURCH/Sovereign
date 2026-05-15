@@ -9,9 +9,6 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 from db import get_conn
 
-conn = get_conn()
-now = datetime.now(timezone.utc)
-
 # ── World Bank indicators ────────────────────────────────────────────────────
 # Source: World Bank WDI 2022, WGI 2022
 WB_DATA = {
@@ -72,36 +69,6 @@ WB_DATA = {
     "KAZ": (0.22e12,  3.2, 14.6,  26.0, 68.0,  -0.75,  -0.82,-0.50,  3.0),
 }
 
-print("Seeding World Bank indicators...")
-n = 0
-for iso3, vals in WB_DATA.items():
-    gdp, growth, inf, debt, trade, pol_stab, corrupt, rule, fdi = vals
-    indicators = {
-        "gdp_usd": gdp,
-        "gdp_growth_pct": growth,
-        "inflation_pct": inf,
-        "govt_debt_pct_gdp": debt,
-        "trade_openness_pct_gdp": trade,
-        "political_stability_score": pol_stab,
-        "corruption_control_score": corrupt,
-        "rule_of_law_score": rule,
-        "fdi_pct_gdp": fdi,
-    }
-    for indicator, value in indicators.items():
-        conn.execute(
-            """
-            INSERT INTO world_bank_indicators (country_iso3, indicator, value, year, fetched_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT (country_iso3, indicator, year) DO UPDATE SET
-                value = excluded.value, fetched_at = excluded.fetched_at
-            """,
-            [iso3, indicator, value, 2022, now],
-        )
-        n += 1
-print(f"  {n} world_bank_indicators rows")
-
-# ── Sanctions ────────────────────────────────────────────────────────────────
-# Source: OFAC SDN list entity counts (approximate 2024)
 SANCTION_DATA = {
     "RUS": (3200, True),
     "IRN": (1800, True),
@@ -130,25 +97,6 @@ SANCTION_DATA = {
     "ARE": (10,   False),
 }
 
-print("Seeding sanctions...")
-n = 0
-for iso3, (count, is_primary) in SANCTION_DATA.items():
-    conn.execute(
-        """
-        INSERT INTO sanctions (country_iso3, sanctioned_entity_count, is_primary_target, last_updated)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT (country_iso3) DO UPDATE SET
-            sanctioned_entity_count = excluded.sanctioned_entity_count,
-            is_primary_target = excluded.is_primary_target,
-            last_updated = excluded.last_updated
-        """,
-        [iso3, count, is_primary, now],
-    )
-    n += 1
-print(f"  {n} sanctions rows")
-
-# ── Market returns ────────────────────────────────────────────────────────────
-# Realistic 1Y returns and 21d volatility for country ETFs (approximate 2023-2024)
 MARKET_DATA = {
     "SPY":  (0.262,  0.16), "FXI":  (-0.18, 0.28), "EWJ":  (0.22,  0.18),
     "EWG":  (0.18,   0.22), "EWU":  (0.14,  0.20), "INDA": (0.30,  0.22),
@@ -161,32 +109,6 @@ MARKET_DATA = {
     "CPER": (0.12,   0.22),
 }
 
-print("Seeding market returns...")
-n = 0
-today = now.date()
-for ticker, (ret_1y, vol_21d) in MARKET_DATA.items():
-    # Seed last 5 trading days of data
-    for days_back in range(5):
-        date = today - timedelta(days=days_back)
-        daily_ret = np.random.normal(ret_1y / 252, vol_21d / np.sqrt(252))
-        conn.execute(
-            """
-            INSERT INTO market_returns (ticker, date, daily_return, cumulative_1y, volatility_21d)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT (ticker, date) DO UPDATE SET
-                daily_return = excluded.daily_return,
-                cumulative_1y = excluded.cumulative_1y,
-                volatility_21d = excluded.volatility_21d
-            """,
-            [ticker, date, float(daily_ret), float(ret_1y), float(vol_21d)],
-        )
-        n += 1
-print(f"  {n} market_returns rows")
-
-# ── Correlations ──────────────────────────────────────────────────────────────
-# 30d pairwise correlations between country ETFs (approximate)
-from ingest.markets import COUNTRY_ETFS
-ticker_to_iso3 = {v: k for k, v in COUNTRY_ETFS.items()}
 CORR_DATA = [
     ("USA","CHN",-0.15), ("USA","JPN", 0.62), ("USA","DEU", 0.70), ("USA","GBR", 0.72),
     ("USA","IND", 0.55), ("USA","BRA", 0.45), ("USA","KOR", 0.65), ("USA","AUS", 0.65),
@@ -200,22 +122,6 @@ CORR_DATA = [
     ("KOR","SGP", 0.55), ("MEX","BRA", 0.65), ("ZAF","NGA", 0.42), ("TUR","BRA", 0.38),
 ]
 
-print("Seeding correlations...")
-n = 0
-for iso_a, iso_b, corr in CORR_DATA:
-    conn.execute(
-        """
-        INSERT INTO correlations (country_a, country_b, correlation_30d, date)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT (country_a, country_b, date) DO UPDATE SET correlation_30d = excluded.correlation_30d
-        """,
-        [iso_a, iso_b, corr, today],
-    )
-    n += 1
-print(f"  {n} correlations rows")
-
-# ── News sentiment ────────────────────────────────────────────────────────────
-# Plausible 7-day news sentiment scores
 SENTIMENT_DATA = {
     "USA":  0.05, "CHN": -0.15, "JPN":  0.08, "DEU": -0.05, "GBR": -0.08,
     "IND":  0.12, "BRA": -0.12, "RUS": -0.55, "KOR":  0.02, "AUS":  0.10,
@@ -230,14 +136,103 @@ SENTIMENT_DATA = {
     "QAT":  0.05, "ARE":  0.08, "KAZ": -0.08,
 }
 
-print("Seeding news sentiment...")
-n = 0
-for iso3, score in SENTIMENT_DATA.items():
-    conn.execute(
-        "INSERT INTO news_sentiment (country_iso3, sentiment_score, article_count, fetched_at) VALUES (?, ?, ?, ?)",
-        [iso3, score, random.randint(5, 20), now],
-    )
-    n += 1
-print(f"  {n} news_sentiment rows")
 
-print("\nSeed complete. Run analytics to compute scores.")
+def run():
+    conn = get_conn()
+    now = datetime.now(timezone.utc)
+    today = now.date()
+
+    print("Seeding World Bank indicators...")
+    n = 0
+    for iso3, vals in WB_DATA.items():
+        gdp, growth, inf, debt, trade, pol_stab, corrupt, rule, fdi = vals
+        indicators = {
+            "gdp_usd": gdp,
+            "gdp_growth_pct": growth,
+            "inflation_pct": inf,
+            "govt_debt_pct_gdp": debt,
+            "trade_openness_pct_gdp": trade,
+            "political_stability_score": pol_stab,
+            "corruption_control_score": corrupt,
+            "rule_of_law_score": rule,
+            "fdi_pct_gdp": fdi,
+        }
+        for indicator, value in indicators.items():
+            conn.execute(
+                """
+                INSERT INTO world_bank_indicators (country_iso3, indicator, value, year, fetched_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (country_iso3, indicator, year) DO UPDATE SET
+                    value = excluded.value, fetched_at = excluded.fetched_at
+                """,
+                [iso3, indicator, value, 2022, now],
+            )
+            n += 1
+    print(f"  {n} world_bank_indicators rows")
+
+    print("Seeding sanctions...")
+    n = 0
+    for iso3, (count, is_primary) in SANCTION_DATA.items():
+        conn.execute(
+            """
+            INSERT INTO sanctions (country_iso3, sanctioned_entity_count, is_primary_target, last_updated)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (country_iso3) DO UPDATE SET
+                sanctioned_entity_count = excluded.sanctioned_entity_count,
+                is_primary_target = excluded.is_primary_target,
+                last_updated = excluded.last_updated
+            """,
+            [iso3, count, is_primary, now],
+        )
+        n += 1
+    print(f"  {n} sanctions rows")
+
+    print("Seeding market returns...")
+    n = 0
+    for ticker, (ret_1y, vol_21d) in MARKET_DATA.items():
+        for days_back in range(5):
+            date = today - timedelta(days=days_back)
+            daily_ret = np.random.normal(ret_1y / 252, vol_21d / np.sqrt(252))
+            conn.execute(
+                """
+                INSERT INTO market_returns (ticker, date, daily_return, cumulative_1y, volatility_21d)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (ticker, date) DO UPDATE SET
+                    daily_return = excluded.daily_return,
+                    cumulative_1y = excluded.cumulative_1y,
+                    volatility_21d = excluded.volatility_21d
+                """,
+                [ticker, date, float(daily_ret), float(ret_1y), float(vol_21d)],
+            )
+            n += 1
+    print(f"  {n} market_returns rows")
+
+    print("Seeding correlations...")
+    n = 0
+    for iso_a, iso_b, corr in CORR_DATA:
+        conn.execute(
+            """
+            INSERT INTO correlations (country_a, country_b, correlation_30d, date)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (country_a, country_b, date) DO UPDATE SET correlation_30d = excluded.correlation_30d
+            """,
+            [iso_a, iso_b, corr, today],
+        )
+        n += 1
+    print(f"  {n} correlations rows")
+
+    print("Seeding news sentiment...")
+    n = 0
+    for iso3, score in SENTIMENT_DATA.items():
+        conn.execute(
+            "INSERT INTO news_sentiment (country_iso3, sentiment_score, article_count, fetched_at) VALUES (?, ?, ?, ?)",
+            [iso3, score, random.randint(5, 20), now],
+        )
+        n += 1
+    print(f"  {n} news_sentiment rows")
+
+    print("Seed complete.")
+
+
+if __name__ == "__main__":
+    run()

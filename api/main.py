@@ -22,9 +22,24 @@ sys.path.insert(0, os.path.dirname(__file__))
 DIST = pathlib.Path(__file__).parent / "dist"
 
 
+def _bootstrap_if_empty():
+    conn = get_conn()
+    count = conn.execute("SELECT COUNT(*) FROM world_bank_indicators").fetchone()[0]
+    if count == 0:
+        print("Database empty — running seed + analytics...")
+        import seed
+        seed.run()
+        from analytics import country_risk, contagion, alerts as alerts_module
+        country_risk.run()
+        contagion.run()
+        alerts_module.run()
+        print("Bootstrap complete.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_conn()
+    _bootstrap_if_empty()
     from ingest.scheduler import start_scheduler
     scheduler = start_scheduler()
     yield
