@@ -1,11 +1,14 @@
 import os
+import shutil
 import duckdb
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_PATH = ":memory:"
+_API_DIR = Path(__file__).parent
+_SEED_DB = _API_DIR / "sovereign_seed.duckdb"
+_RUNTIME_DB = Path("/tmp/sovereign.duckdb")
 
 _conn: duckdb.DuckDBPyConnection | None = None
 
@@ -13,8 +16,15 @@ _conn: duckdb.DuckDBPyConnection | None = None
 def get_conn() -> duckdb.DuckDBPyConnection:
     global _conn
     if _conn is None:
-        _conn = duckdb.connect(DB_PATH)
-        _init_schema(_conn)
+        if _SEED_DB.exists():
+            # Copy pre-seeded DB to /tmp (writable) on cold start
+            if not _RUNTIME_DB.exists():
+                shutil.copy2(str(_SEED_DB), str(_RUNTIME_DB))
+            _conn = duckdb.connect(str(_RUNTIME_DB))
+        else:
+            # Local dev fallback: file next to db.py
+            _conn = duckdb.connect(str(_API_DIR / "sovereign.duckdb"))
+            _init_schema(_conn)
     return _conn
 
 

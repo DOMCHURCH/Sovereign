@@ -21,24 +21,6 @@ from analyst import stream_analyst
 DIST = pathlib.Path(__file__).parent / "dist"
 
 
-def _bootstrap():
-    print("Seeding in-memory database...")
-    get_conn()
-    import seed
-    seed.run()
-    from analytics import country_risk, contagion, alerts as alerts_module
-    country_risk.run()
-    contagion.run()
-    alerts_module.run()
-    print("Bootstrap complete.")
-
-
-# Runs synchronously at module import (cold start) so DB is ready before
-# any request is handled. Vercel waits for import to complete.
-try:
-    _bootstrap()
-except Exception as e:
-    print(f"Bootstrap error: {e}")
 
 app = FastAPI(title="Sovereign API", version="1.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
