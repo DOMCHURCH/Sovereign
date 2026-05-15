@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+*.duckdb
+*.duckdb.wal
+node_modules/
+dist/
+.vite/
+*.local
+.DS_Store
