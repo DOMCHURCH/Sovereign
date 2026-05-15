@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import yfinance as yf
 from datetime import datetime, timezone, timedelta
 from db import get_conn, log_ingest
 
@@ -39,6 +38,7 @@ def run() -> int:
 
     rows_written = 0
 
+    import yfinance as yf
     data = yf.download(
         ALL_TICKERS,
         start=str(start),
