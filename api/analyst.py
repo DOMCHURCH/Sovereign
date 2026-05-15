@@ -1,10 +1,10 @@
 import os
 import json
 from typing import AsyncGenerator
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from db import get_conn
 
-MODEL = "claude-3-5-haiku-20241022"
+MODEL = "llama3.1-8b"
 
 SYSTEM_PROMPT_TEMPLATE = """You are Sovereign, an institutional geopolitical risk analyst with live access to sovereign risk scores, contagion models, and portfolio impact estimates for 50+ countries.
 
@@ -86,7 +86,10 @@ async def stream_analyst(
     history: list[dict],
     country_context: str | None = None,
 ) -> AsyncGenerator[str, None]:
-    client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = AsyncOpenAI(
+        api_key=os.getenv("CEREBRAS_API_KEY"),
+        base_url="https://api.cerebras.ai/v1",
+    )
     system = _build_system_prompt(country_context)
 
     messages = []
@@ -94,11 +97,14 @@ async def stream_analyst(
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": message})
 
-    async with client.messages.stream(
+    stream = await client.chat.completions.create(
         model=MODEL,
         max_tokens=1024,
         system=system,
         messages=messages,
-    ) as stream:
-        async for text in stream.text_stream:
-            yield text
+        stream=True,
+    )
+
+    async for chunk in stream:
+        if chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content
