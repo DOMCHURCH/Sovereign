@@ -1,16 +1,11 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  ComposableMap,
-  Geographies,
-  Geography,
-  ZoomableGroup,
-} from 'react-simple-maps'
+import GlobeGL from 'react-globe.gl'
 import { api } from '../api'
 import RiskBadge from '../components/RiskBadge'
 import AlertFeed from '../components/AlertFeed'
 
-const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
+const GEO_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson'
 
 const TIER_COLORS = {
   low:      '#22c55e',
@@ -20,23 +15,19 @@ const TIER_COLORS = {
   none:     '#1e293b',
 }
 
-// ISO numeric → ISO3 mapping (subset of most represented countries)
-const NUM_TO_ISO3 = {
-  840: 'USA', 156: 'CHN', 392: 'JPN', 276: 'DEU', 826: 'GBR',
-  356: 'IND', 76:  'BRA', 643: 'RUS', 410: 'KOR', 36:  'AUS',
-  124: 'CAN', 250: 'FRA', 380: 'ITA', 484: 'MEX', 682: 'SAU',
-  710: 'ZAF', 702: 'SGP', 344: 'HKG', 158: 'TWN', 32:  'ARG',
-  792: 'TUR', 862: 'VEN', 192: 'CUB', 112: 'BLR', 586: 'PAK',
-  4:   'AFG', 804: 'UKR', 566: 'NGA', 818: 'EGY', 376: 'ISR',
-  368: 'IRQ', 434: 'LBY', 887: 'YEM', 231: 'ETH', 104: 'MMR',
-  736: 'SDN', 716: 'ZWE', 558: 'NIC', 422: 'LBN', 364: 'IRN',
-  408: 'PRK', 760: 'SYR', 528: 'NLD', 724: 'ESP', 756: 'CHE',
-  752: 'SWE', 578: 'NOR', 616: 'POL', 360: 'IDN', 458: 'MYS',
-  764: 'THA', 704: 'VNM', 608: 'PHL', 50:  'BGD', 170: 'COL',
-  152: 'CHL', 604: 'PER', 404: 'KEN', 288: 'GHA', 834: 'TZA',
-  24:  'AGO', 12:  'DZA', 504: 'MAR', 634: 'QAT', 784: 'ARE',
-  414: 'KWT', 512: 'OMN', 400: 'JOR', 31:  'AZE', 398: 'KAZ',
-  860: 'UZB',
+const TIER_ALT = {
+  severe: 0.025,
+  high:   0.015,
+  elevated: 0.008,
+  low:    0.003,
+  none:   0.002,
+}
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1,3),16)
+  const g = parseInt(hex.slice(3,5),16)
+  const b = parseInt(hex.slice(5,7),16)
+  return `rgba(${r},${g},${b},${alpha})`
 }
 
 function deltaArrow(delta) {
@@ -57,9 +48,11 @@ function deltaColor(delta) {
 export default function Globe() {
   const [countries, setCountries] = useState([])
   const [alerts, setAlerts] = useState([])
-  const [tooltip, setTooltip] = useState(null)
   const [impact, setImpact] = useState(null)
   const [lastRefresh, setLastRefresh] = useState(null)
+  const [hovered, setHovered] = useState(null)
+  const [geoData, setGeoData] = useState([])
+  const globeRef = useRef(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -74,6 +67,23 @@ export default function Globe() {
     }, 60000)
     return () => clearInterval(t)
   }, [])
+
+  useEffect(() => {
+    fetch(GEO_URL)
+      .then(r => r.json())
+      .then(d => setGeoData(d.features || []))
+      .catch(() => {})
+  }, [])
+
+  // Auto-rotate setup
+  useEffect(() => {
+    if (!globeRef.current) return
+    const controls = globeRef.current.controls()
+    if (!controls) return
+    controls.autoRotate = true
+    controls.autoRotateSpeed = 0.4
+    controls.enableZoom = true
+  }, [globeRef.current])
 
   const byIso3 = Object.fromEntries(countries.map(c => [c.iso3, c]))
 
@@ -91,102 +101,98 @@ export default function Globe() {
     return acc
   }, {})
 
-  const handleGeoClick = useCallback((geo) => {
-    const numId = parseInt(geo.id)
-    const iso3 = NUM_TO_ISO3[numId]
-    if (iso3) navigate(`/country/${iso3}`)
-  }, [navigate])
-
-  const handleGeoEnter = useCallback((geo, evt) => {
-    const numId = parseInt(geo.id)
-    const iso3 = NUM_TO_ISO3[numId]
-    if (!iso3) return
-    const c = byIso3[iso3]
-    if (!c) return
-    setTooltip({ country: c, x: evt.clientX, y: evt.clientY })
+  const getCountry = useCallback((feat) => {
+    const iso3 = feat?.properties?.ISO_A3 || feat?.properties?.ADM0_A3
+    return iso3 ? byIso3[iso3] : null
   }, [byIso3])
 
-  const handleGeoLeave = useCallback(() => setTooltip(null), [])
+  const getIso3 = (feat) => feat?.properties?.ISO_A3 || feat?.properties?.ADM0_A3
+
+  const handleClick = useCallback((feat) => {
+    const iso3 = getIso3(feat)
+    if (iso3 && iso3 !== '-99') navigate(`/country/${iso3}`)
+  }, [navigate])
+
+  const handleHover = useCallback((feat) => {
+    setHovered(feat || null)
+    if (!globeRef.current) return
+    const controls = globeRef.current.controls()
+    if (!controls) return
+    controls.autoRotate = !feat
+  }, [])
+
+  const polygonColor = useCallback((feat) => {
+    const c = getCountry(feat)
+    const tier = c?.risk_tier || 'none'
+    const color = TIER_COLORS[tier] || TIER_COLORS.none
+    const isHov = hovered && getIso3(hovered) === getIso3(feat)
+    return hexToRgba(color, isHov ? 0.95 : 0.75)
+  }, [getCountry, hovered])
+
+  const polygonSideColor = useCallback((feat) => {
+    const c = getCountry(feat)
+    const tier = c?.risk_tier || 'none'
+    const color = TIER_COLORS[tier] || TIER_COLORS.none
+    return hexToRgba(color, 0.3)
+  }, [getCountry])
+
+  const polygonAlt = useCallback((feat) => {
+    const c = getCountry(feat)
+    const tier = c?.risk_tier || 'none'
+    return TIER_ALT[tier] || TIER_ALT.none
+  }, [getCountry])
+
+  const polygonLabel = useCallback((feat) => {
+    const c = getCountry(feat)
+    if (!c) return ''
+    const score = c.sovereign_risk_score?.toFixed(1) ?? '—'
+    const delta = deltaArrow(c.risk_delta_7d)
+    const tier = c.risk_tier || 'unknown'
+    const driver = c.top_risk_drivers?.[0] || ''
+    return `
+      <div style="background:rgba(12,12,20,0.95);border:1px solid #2e2e42;border-radius:8px;padding:10px 14px;font-family:monospace;min-width:180px;max-width:220px">
+        <div style="color:#e2e8f0;font-size:13px;font-weight:600;margin-bottom:4px">${c.name}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:11px;padding:1px 6px;border-radius:4px;background:${TIER_COLORS[tier]}25;color:${TIER_COLORS[tier]};text-transform:uppercase">${tier}</span>
+          <span style="color:${TIER_COLORS[tier]};font-size:14px;font-weight:bold">${score}</span>
+          <span style="color:${deltaColor(c.risk_delta_7d)};font-size:11px">${delta}</span>
+        </div>
+        ${driver ? `<div style="color:#94a3b8;font-size:11px">⚡ ${driver}</div>` : ''}
+      </div>
+    `
+  }, [getCountry])
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
-      {/* Map area */}
+    <div className="flex h-screen overflow-hidden" style={{ background: '#070710' }}>
+      {/* Globe area */}
       <div className="flex-1 relative">
-        <ComposableMap
-          projectionConfig={{ scale: 147, center: [10, 10] }}
-          style={{ width: '100%', height: '100%' }}
-        >
-          <ZoomableGroup>
-            <Geographies geography={GEO_URL}>
-              {({ geographies }) =>
-                geographies.map(geo => {
-                  const numId = parseInt(geo.id)
-                  const iso3 = NUM_TO_ISO3[numId]
-                  const c = iso3 ? byIso3[iso3] : null
-                  const color = c?.risk_tier ? TIER_COLORS[c.risk_tier] : TIER_COLORS.none
-                  const isCritical = iso3 ? criticalSet.has(iso3) : false
+        <GlobeGL
+          ref={globeRef}
+          width={window.innerWidth - 288}
+          height={window.innerHeight - 48}
+          backgroundColor="#070710"
+          globeImageUrl="//cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg"
+          atmosphereColor="#6366f1"
+          atmosphereAltitude={0.15}
+          polygonsData={geoData}
+          polygonCapColor={polygonColor}
+          polygonSideColor={polygonSideColor}
+          polygonStrokeColor={() => 'rgba(99,102,241,0.3)'}
+          polygonAltitude={polygonAlt}
+          polygonLabel={polygonLabel}
+          onPolygonClick={handleClick}
+          onPolygonHover={handleHover}
+          polygonsTransitionDuration={200}
+        />
 
-                  return (
-                    <Geography
-                      key={geo.rsmKey}
-                      geography={geo}
-                      fill={color}
-                      stroke="#0a0a0f"
-                      strokeWidth={0.4}
-                      style={{
-                        default: { outline: 'none', opacity: isCritical ? 1 : 0.85 },
-                        hover: { outline: 'none', opacity: 1, filter: 'brightness(1.3)' },
-                        pressed: { outline: 'none' },
-                      }}
-                      onClick={() => handleGeoClick(geo)}
-                      onMouseEnter={(evt) => handleGeoEnter(geo, evt)}
-                      onMouseLeave={handleGeoLeave}
-                    />
-                  )
-                })
-              }
-            </Geographies>
-          </ZoomableGroup>
-        </ComposableMap>
-
-        {/* Tooltip */}
-        {tooltip && (
-          <div
-            className="fixed z-50 pointer-events-none rounded-lg border shadow-2xl p-3 w-56"
-            style={{
-              left: tooltip.x + 14,
-              top: tooltip.y - 10,
-              background: 'rgba(18,18,26,0.97)',
-              borderColor: '#2e2e42',
-              backdropFilter: 'blur(8px)',
-            }}
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-semibold text-slate-100">{tooltip.country.name}</span>
-              <span className="font-mono text-xs text-slate-500">{tooltip.country.iso3}</span>
-            </div>
-            <div className="flex items-center gap-2 mb-1">
-              <RiskBadge tier={tooltip.country.risk_tier} />
-              <span className="font-mono text-sm font-bold"
-                    style={{ color: TIER_COLORS[tooltip.country.risk_tier] || '#64748b' }}>
-                {tooltip.country.sovereign_risk_score?.toFixed(1) ?? '—'}
-              </span>
-              <span className="text-xs font-mono"
-                    style={{ color: deltaColor(tooltip.country.risk_delta_7d) }}>
-                {deltaArrow(tooltip.country.risk_delta_7d)}
-              </span>
-            </div>
-            {tooltip.country.top_risk_drivers?.[0] && (
-              <p className="text-xs text-slate-400">
-                ⚡ {tooltip.country.top_risk_drivers[0]}
-              </p>
-            )}
-          </div>
-        )}
+        {/* Drag hint */}
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-xs text-slate-600 font-mono pointer-events-none select-none">
+          Drag to rotate · Click country to explore
+        </div>
 
         {/* Bottom status bar */}
         <div className="absolute bottom-0 left-0 right-0 flex items-center gap-6 px-4 py-2 text-xs font-mono"
-             style={{ background: 'rgba(10,10,15,0.9)', borderTop: '1px solid #1e1e2e' }}>
+             style={{ background: 'rgba(7,7,16,0.9)', borderTop: '1px solid #1e1e2e' }}>
           <span className="text-slate-500">ALERTS:</span>
           {alertCounts.critical > 0 && (
             <span className="text-red-400">🔴 {alertCounts.critical} critical</span>
@@ -235,8 +241,7 @@ export default function Globe() {
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
                   <RiskBadge tier={c.risk_tier} size="xs" />
-                  <span className="text-xs font-mono"
-                        style={{ color: deltaColor(c.risk_delta_7d) }}>
+                  <span className="text-xs font-mono" style={{ color: deltaColor(c.risk_delta_7d) }}>
                     {deltaArrow(c.risk_delta_7d)}
                   </span>
                 </div>
@@ -261,7 +266,7 @@ export default function Globe() {
 
         {/* Legend */}
         <div className="px-4 py-3 border-t" style={{ borderColor: '#1e1e2e' }}>
-          <div className="flex items-center gap-3 text-xs font-mono">
+          <div className="flex items-center gap-3 text-xs font-mono flex-wrap">
             {[['low','#22c55e'],['elevated','#eab308'],['high','#f97316'],['severe','#ef4444']].map(([t, c]) => (
               <span key={t} className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full inline-block" style={{ background: c }} />

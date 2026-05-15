@@ -26,11 +26,11 @@ function SearchBar() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const filtered = query.length > 1
+  const filtered = query.length > 0
     ? countries.filter(c =>
         c.name.toLowerCase().includes(query.toLowerCase()) ||
         c.iso3.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 6)
+      ).slice(0, 8)
     : []
 
   const TIER_COLORS = { low: '#22c55e', elevated: '#eab308', high: '#f97316', severe: '#ef4444' }
@@ -40,24 +40,44 @@ function SearchBar() {
       <input
         value={query}
         onChange={e => { setQuery(e.target.value); setOpen(true) }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => { if (query) setOpen(true) }}
+        onKeyDown={e => {
+          if (e.key === 'Escape') { setOpen(false); setQuery('') }
+          if (e.key === 'Enter' && filtered.length > 0) {
+            navigate(`/country/${filtered[0].iso3}`)
+            setQuery('')
+            setOpen(false)
+          }
+        }}
         placeholder="Search countries..."
-        className="w-44 text-xs px-3 py-1.5 rounded-lg border bg-transparent text-slate-300 placeholder-slate-600 outline-none focus:border-indigo-500 transition-colors"
+        className="w-52 text-xs px-3 py-1.5 rounded-lg border bg-transparent text-slate-300 placeholder-slate-600 outline-none focus:border-indigo-500 transition-colors"
         style={{ borderColor: '#2e2e42' }}
       />
       {open && filtered.length > 0 && (
-        <div className="absolute top-full mt-1 left-0 w-56 rounded-lg border shadow-2xl overflow-hidden z-50"
-             style={{ background: '#12121a', borderColor: '#2e2e42' }}>
+        <div
+          className="rounded-lg border shadow-2xl overflow-hidden"
+          style={{
+            position: 'fixed',
+            top: '44px',
+            right: '16px',
+            width: '260px',
+            background: '#12121a',
+            borderColor: '#2e2e42',
+            zIndex: 9999,
+          }}
+        >
           {filtered.map(c => (
             <button
               key={c.iso3}
-              className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors border-b last:border-0"
+              style={{ borderColor: '#1e1e2e' }}
+              onMouseDown={e => e.preventDefault()}
               onClick={() => { navigate(`/country/${c.iso3}`); setQuery(''); setOpen(false) }}
             >
-              <span className="font-mono text-xs text-slate-500 w-8">{c.iso3}</span>
-              <span className="text-sm text-slate-300 flex-1">{c.name}</span>
+              <span className="font-mono text-xs text-slate-500 w-8 shrink-0">{c.iso3}</span>
+              <span className="text-sm text-slate-300 flex-1 truncate">{c.name}</span>
               {c.sovereign_risk_score != null && (
-                <span className="font-mono text-xs font-bold"
+                <span className="font-mono text-xs font-bold shrink-0"
                       style={{ color: TIER_COLORS[c.risk_tier] || '#64748b' }}>
                   {c.sovereign_risk_score.toFixed(0)}
                 </span>

@@ -1,183 +1,328 @@
-import { useEffect, useState } from 'react'
-import { api } from '../api'
+import { useEffect, useState, useRef } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { api, streamAnalyst } from '../api'
 
-const SOURCES = [
-  { name: 'World Bank WDI/WGI', desc: '53 countries · GDP, inflation, debt, governance scores', color: '#3b82f6' },
-  { name: 'OFAC SDN List', desc: '3,200+ sanctioned entities tracked across 25 countries', color: '#8b5cf6' },
-  { name: 'Equity Markets', desc: '25 country ETFs · 1Y returns, 21D volatility, 30D correlations', color: '#06b6d4' },
-  { name: 'News Sentiment', desc: 'NLP sentiment across 53 countries · 7-day rolling average', color: '#10b981' },
+const TIER_COLORS = { low: '#22c55e', elevated: '#eab308', high: '#f97316', severe: '#ef4444' }
+
+const SUGGESTED = [
+  "What are the top geopolitical risks right now?",
+  "Which countries pose the highest contagion risk?",
+  "Summarize portfolio exposure to high-risk nations",
+  "What's driving elevated risk in emerging markets?",
 ]
 
-function Card({ title, accent, children }) {
+function Message({ msg }) {
+  const isUser = msg.role === 'user'
   return (
-    <div className="rounded-xl border p-5" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
-      <h3 className="text-xs font-mono font-semibold uppercase tracking-widest mb-4" style={{ color: accent }}>
-        {title}
-      </h3>
-      {children}
+    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${
+        isUser ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'
+      }`}>
+        {isUser ? 'U' : 'AI'}
+      </div>
+      <div className={`max-w-[80%] rounded-xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+        isUser
+          ? 'bg-indigo-600/20 border border-indigo-500/30 text-slate-200'
+          : 'bg-slate-800/60 border border-slate-700/50 text-slate-300'
+      }`}>
+        {msg.content}
+        {msg.streaming && (
+          <span className="inline-block w-1.5 h-4 bg-indigo-400 ml-1 animate-pulse align-text-bottom" />
+        )}
+      </div>
     </div>
   )
 }
 
-function RiskBar({ label, value, max = 100 }) {
-  const pct = Math.min(100, (value / max) * 100)
-  const color = value > 70 ? '#ef4444' : value > 50 ? '#f59e0b' : value > 30 ? '#3b82f6' : '#10b981'
+function CountryCard({ c, onClick }) {
   return (
-    <div className="mb-3">
-      <div className="flex justify-between text-xs text-slate-400 mb-1">
-        <span>{label}</span>
-        <span className="font-mono" style={{ color }}>{value.toFixed(1)}</span>
-      </div>
-      <div className="h-1.5 rounded-full" style={{ background: '#1e1e2e' }}>
-        <div className="h-1.5 rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
-      </div>
-    </div>
+    <button
+      onClick={() => onClick(c.iso3)}
+      className="flex items-center gap-2 px-3 py-2 rounded-lg border hover:bg-white/5 transition-colors text-left w-full"
+      style={{ borderColor: '#2e2e42', background: '#12121a' }}
+    >
+      <span className="font-mono text-xs text-slate-500 w-8">{c.iso3}</span>
+      <span className="text-sm text-slate-300 flex-1 truncate">{c.name}</span>
+      <span className="font-mono text-xs font-bold shrink-0"
+            style={{ color: TIER_COLORS[c.risk_tier] || '#64748b' }}>
+        {c.sovereign_risk_score?.toFixed(0)}
+      </span>
+    </button>
   )
 }
 
 export default function Analyst() {
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const countryParam = searchParams.get('country')
+
   const [countries, setCountries] = useState([])
-  const [alerts, setAlerts] = useState([])
-  const [impact, setImpact] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [focusCountry, setFocusCountry] = useState(null)
+  const [messages, setMessages] = useState([])
+  const [input, setInput] = useState('')
+  const [streaming, setStreaming] = useState(false)
+  const [countrySearch, setCountrySearch] = useState('')
+  const [showCountryPicker, setShowCountryPicker] = useState(false)
+  const messagesEndRef = useRef(null)
+  const inputRef = useRef(null)
 
   useEffect(() => {
-    Promise.all([api.countries(), api.alerts(), api.portfolioImpact()])
-      .then(([c, a, imp]) => {
-        setCountries(c)
-        setAlerts(a.filter(x => !x.acknowledged))
-        setImpact(imp)
+    api.countries().then(d => {
+      const sorted = d.filter(c => c.sovereign_risk_score != null)
+        .sort((a, b) => b.sovereign_risk_score - a.sovereign_risk_score)
+      setCountries(sorted)
+
+      if (countryParam) {
+        const c = d.find(x => x.iso3 === countryParam.toUpperCase())
+        if (c) {
+          setFocusCountry(c)
+          const welcome = {
+            role: 'assistant',
+            content: `I'm analyzing ${c.name} (risk score: ${c.sovereign_risk_score?.toFixed(1)}, tier: ${c.risk_tier}). What would you like to know?`,
+          }
+          setMessages([welcome])
+        }
+      }
+    }).catch(() => {})
+  }, [countryParam])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const filteredCountries = countries.filter(c =>
+    !countrySearch || c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.iso3.toLowerCase().includes(countrySearch.toLowerCase())
+  )
+
+  const selectCountry = (iso3) => {
+    const c = countries.find(x => x.iso3 === iso3)
+    setFocusCountry(c || null)
+    setShowCountryPicker(false)
+    setCountrySearch('')
+    if (c) {
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Switching focus to ${c.name} (risk score: ${c.sovereign_risk_score?.toFixed(1)}, tier: ${c.risk_tier}). What would you like to know?`,
+        }
+      ])
+    }
+  }
+
+  const clearCountry = () => {
+    setFocusCountry(null)
+    setMessages(prev => [...prev, { role: 'assistant', content: 'Cleared country focus. I can now answer questions about any country or the global situation.' }])
+  }
+
+  const send = async (text) => {
+    const msg = text || input.trim()
+    if (!msg || streaming) return
+    setInput('')
+
+    const userMsg = { role: 'user', content: msg }
+    const assistantMsg = { role: 'assistant', content: '', streaming: true }
+
+    setMessages(prev => [...prev, userMsg, assistantMsg])
+    setStreaming(true)
+
+    const history = messages.map(m => ({ role: m.role, content: m.content }))
+    const context = focusCountry ? focusCountry.iso3 : null
+
+    try {
+      await streamAnalyst(
+        msg,
+        history,
+        context,
+        (chunk) => {
+          setMessages(prev => {
+            const last = prev[prev.length - 1]
+            if (last?.streaming) {
+              return [...prev.slice(0, -1), { ...last, content: last.content + chunk }]
+            }
+            return prev
+          })
+        },
+        () => {
+          setMessages(prev => {
+            const last = prev[prev.length - 1]
+            if (last?.streaming) {
+              return [...prev.slice(0, -1), { ...last, streaming: false }]
+            }
+            return prev
+          })
+          setStreaming(false)
+        }
+      )
+    } catch (err) {
+      setMessages(prev => {
+        const last = prev[prev.length - 1]
+        if (last?.streaming) {
+          return [...prev.slice(0, -1), { role: 'assistant', content: 'Error connecting to analyst. Please try again.' }]
+        }
+        return prev
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+      setStreaming(false)
+    }
+  }
 
-  const topRisk = [...countries]
-    .filter(c => c.sovereign_risk_score != null)
-    .sort((a, b) => b.sovereign_risk_score - a.sovereign_risk_score)
-    .slice(0, 6)
-
-  const critical = alerts.filter(a => a.severity === 'critical').slice(0, 3)
-  const warning = alerts.filter(a => a.severity === 'warning').slice(0, 3)
-  const shownAlerts = [...critical, ...warning].slice(0, 5)
-
-  const worstExposures = impact?.worst_country_exposures?.slice(0, 5) || []
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64 text-slate-500 text-sm">
-        Loading intelligence data...
-      </div>
-    )
+  const handleKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      send()
+    }
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-slate-200">Sovereign Intelligence Brief</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {countries.length} countries · {alerts.length} active alerts · Live as of {new Date().toLocaleDateString()}
-          </p>
-        </div>
-        {impact && (
-          <div className="text-right">
-            <div className={`text-lg font-mono font-bold ${impact.total_shock_pct < -0.005 ? 'text-red-400' : 'text-green-400'}`}>
-              {impact.total_shock_pct > 0 ? '+' : ''}{(impact.total_shock_pct * 100).toFixed(2)}%
-            </div>
-            <div className="text-xs text-slate-500">Est. portfolio P&L impact</div>
-          </div>
-        )}
-      </div>
+    <div className="flex h-[calc(100vh-48px)] overflow-hidden" style={{ background: 'var(--bg)' }}>
+      {/* Left sidebar */}
+      <div className="w-64 flex flex-col border-r shrink-0" style={{ borderColor: '#1e1e2e', background: '#0d0d14' }}>
+        <div className="p-4 border-b" style={{ borderColor: '#1e1e2e' }}>
+          <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase mb-3">Country Focus</h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Top Risk Drivers */}
-        <Card title="Top Risk Drivers" accent="#f59e0b">
-          {topRisk.length === 0 ? (
-            <p className="text-sm text-slate-500">No risk data available yet.</p>
-          ) : (
-            topRisk.map(c => (
-              <RiskBar key={c.iso3} label={`${c.name} (${c.iso3})`} value={c.sovereign_risk_score} />
-            ))
-          )}
-        </Card>
-
-        {/* Portfolio Exposure */}
-        <Card title="Portfolio Exposure" accent="#ef4444">
-          {worstExposures.length === 0 ? (
-            <p className="text-sm text-slate-500">No portfolio exposure data.</p>
-          ) : (
-            <>
-              {worstExposures.map(e => (
-                <div key={e.country} className="flex items-center justify-between mb-3 text-sm">
-                  <div>
-                    <span className="text-slate-300 font-medium">{e.country}</span>
-                    <span className="text-slate-500 text-xs ml-2">
-                      {(e.portfolio_weight_exposed * 100).toFixed(1)}% weight
+          {focusCountry ? (
+            <div className="rounded-lg border p-3" style={{ borderColor: '#2e2e42', background: '#12121a' }}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-200 truncate">{focusCountry.name}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs px-1.5 py-0.5 rounded font-mono"
+                          style={{ background: `${TIER_COLORS[focusCountry.risk_tier]}20`, color: TIER_COLORS[focusCountry.risk_tier] }}>
+                      {focusCountry.risk_tier?.toUpperCase()}
+                    </span>
+                    <span className="font-mono text-sm font-bold"
+                          style={{ color: TIER_COLORS[focusCountry.risk_tier] || '#64748b' }}>
+                      {focusCountry.sovereign_risk_score?.toFixed(1)}
                     </span>
                   </div>
-                  <span className={`font-mono text-xs ${e.shock_pct < 0 ? 'text-red-400' : 'text-green-400'}`}>
-                    {e.shock_pct > 0 ? '+' : ''}{(e.shock_pct * 100).toFixed(2)}%
-                  </span>
                 </div>
-              ))}
-              {impact && (
-                <div className="mt-4 pt-3 border-t flex justify-between text-xs" style={{ borderColor: '#1e1e2e' }}>
-                  <span className="text-slate-500">Total portfolio shock</span>
-                  <span className={`font-mono font-semibold ${impact.total_shock_pct < 0 ? 'text-red-400' : 'text-green-400'}`}>
-                    ${(impact.total_shock_usd / 1000).toFixed(1)}K ({(impact.total_shock_pct * 100).toFixed(2)}%)
-                  </span>
-                </div>
-              )}
-            </>
-          )}
-        </Card>
-
-        {/* Contagion Watch */}
-        <Card title="Contagion Watch" accent="#3b82f6">
-          {shownAlerts.length === 0 ? (
-            <p className="text-sm text-slate-500">No active alerts — all systems stable.</p>
+                <button onClick={clearCountry} className="text-slate-600 hover:text-slate-400 text-lg leading-none mt-0.5">×</button>
+              </div>
+              <button
+                onClick={() => navigate(`/country/${focusCountry.iso3}`)}
+                className="mt-2 w-full text-xs text-indigo-400 hover:text-indigo-300 text-left transition-colors"
+              >
+                View full analysis →
+              </button>
+            </div>
           ) : (
-            shownAlerts.map(a => (
-              <div key={a.id} className="mb-3 pb-3 border-b last:border-0 last:mb-0 last:pb-0" style={{ borderColor: '#1e1e2e' }}>
-                <div className="flex items-start gap-2">
-                  <span className={`mt-0.5 text-xs font-mono px-1.5 py-0.5 rounded shrink-0 ${
-                    a.severity === 'critical' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'
-                  }`}>
-                    {a.severity.toUpperCase()}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-xs text-slate-300 font-medium">{a.country_iso3} · {a.trigger}</div>
-                    <div className="text-xs text-slate-500 mt-0.5 truncate">{a.message}</div>
-                    {a.contagion_risk?.length > 0 && (
-                      <div className="text-xs text-blue-400 mt-1">
-                        Contagion: {a.contagion_risk.slice(0, 3).join(', ')}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))
+            <button
+              onClick={() => setShowCountryPicker(p => !p)}
+              className="w-full text-xs px-3 py-2 rounded-lg border border-dashed text-slate-500 hover:text-slate-300 hover:border-slate-500 transition-colors"
+              style={{ borderColor: '#2e2e42' }}
+            >
+              + Focus on a country
+            </button>
           )}
-        </Card>
 
-        {/* Data Sources */}
-        <Card title="Data Sources" accent="#64748b">
-          <div className="space-y-3">
-            {SOURCES.map(s => (
-              <div key={s.name} className="flex items-start gap-3">
-                <div className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: s.color }} />
-                <div>
-                  <div className="text-xs text-slate-300 font-medium">{s.name}</div>
-                  <div className="text-xs text-slate-500">{s.desc}</div>
-                </div>
+          {showCountryPicker && (
+            <div className="mt-2">
+              <input
+                value={countrySearch}
+                onChange={e => setCountrySearch(e.target.value)}
+                placeholder="Search..."
+                autoFocus
+                className="w-full text-xs px-2 py-1.5 rounded border bg-transparent text-slate-300 placeholder-slate-600 outline-none"
+                style={{ borderColor: '#2e2e42' }}
+              />
+              <div className="mt-1 max-h-48 overflow-y-auto space-y-0.5">
+                {filteredCountries.slice(0, 20).map(c => (
+                  <CountryCard key={c.iso3} c={c} onClick={selectCountry} />
+                ))}
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Suggested questions */}
+        <div className="p-4 flex-1 overflow-y-auto">
+          <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase mb-3">Suggested</h2>
+          <div className="space-y-2">
+            {SUGGESTED.map(q => (
+              <button
+                key={q}
+                onClick={() => send(q)}
+                disabled={streaming}
+                className="w-full text-left text-xs text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg border hover:bg-white/5 transition-colors disabled:opacity-40"
+                style={{ borderColor: '#1e1e2e' }}
+              >
+                {q}
+              </button>
             ))}
           </div>
-          <div className="mt-4 pt-3 border-t text-xs text-slate-600" style={{ borderColor: '#1e1e2e' }}>
-            Risk model: 6-factor composite · NetworkX contagion graph · APScheduler 6h refresh
+        </div>
+      </div>
+
+      {/* Chat area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-3 border-b flex items-center gap-3" style={{ borderColor: '#1e1e2e', background: '#0a0a0f' }}>
+          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-sm font-mono text-slate-400">
+            Sovereign AI Analyst
+            {focusCountry && (
+              <span className="text-indigo-400"> · {focusCountry.name}</span>
+            )}
+          </span>
+          {messages.length > 0 && (
+            <button
+              onClick={() => setMessages([])}
+              className="ml-auto text-xs text-slate-600 hover:text-slate-400 transition-colors"
+            >
+              Clear chat
+            </button>
+          )}
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mb-4">
+                <span className="text-2xl">🌐</span>
+              </div>
+              <h3 className="text-slate-300 font-semibold mb-2">Sovereign Intelligence Analyst</h3>
+              <p className="text-slate-500 text-sm max-w-sm">
+                Ask me anything about geopolitical risk, country stability, or portfolio exposure.
+                {!focusCountry && ' Focus on a specific country for targeted analysis.'}
+              </p>
+            </div>
+          )}
+          {messages.map((msg, i) => (
+            <Message key={i} msg={msg} />
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input */}
+        <div className="px-6 py-4 border-t" style={{ borderColor: '#1e1e2e', background: '#0a0a0f' }}>
+          <div className="flex gap-3 items-end">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKey}
+              disabled={streaming}
+              placeholder={focusCountry ? `Ask about ${focusCountry.name}...` : 'Ask about geopolitical risk...'}
+              rows={1}
+              className="flex-1 text-sm px-4 py-3 rounded-xl border bg-transparent text-slate-200 placeholder-slate-600 outline-none focus:border-indigo-500 transition-colors resize-none disabled:opacity-50"
+              style={{ borderColor: '#2e2e42', minHeight: 48, maxHeight: 120 }}
+            />
+            <button
+              onClick={() => send()}
+              disabled={!input.trim() || streaming}
+              className="px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors shrink-0"
+              style={{ height: 48 }}
+            >
+              {streaming ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                </span>
+              ) : '↑'}
+            </button>
           </div>
-        </Card>
+          <p className="text-xs text-slate-700 mt-2">Enter to send · Shift+Enter for new line</p>
+        </div>
       </div>
     </div>
   )
