@@ -1,6 +1,7 @@
 import os
 import json
 import pathlib
+import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
@@ -39,7 +40,7 @@ def _bootstrap_if_empty():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_conn()
-    _bootstrap_if_empty()
+    threading.Thread(target=_bootstrap_if_empty, daemon=True).start()
     from ingest.scheduler import start_scheduler
     scheduler = start_scheduler()
     yield

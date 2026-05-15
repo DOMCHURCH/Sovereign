@@ -92,15 +92,14 @@ async def stream_analyst(
     )
     system = _build_system_prompt(country_context)
 
-    messages = []
-    for h in history[-10:]:  # keep last 10 turns
+    messages = [{"role": "system", "content": system}]
+    for h in history[-10:]:
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": message})
 
     stream = await client.chat.completions.create(
         model=MODEL,
         max_tokens=1024,
-        system=system,
         messages=messages,
         stream=True,
     )
