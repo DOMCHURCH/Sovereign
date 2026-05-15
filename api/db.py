@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_PATH = os.getenv("DATABASE_PATH", "./sovereign.duckdb")
+DB_PATH = ":memory:"
 
 _conn: duckdb.DuckDBPyConnection | None = None
 
