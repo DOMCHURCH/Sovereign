@@ -1,12 +1,14 @@
 import os
 import json
+import pathlib
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from db import get_conn, log_ingest
@@ -17,10 +19,11 @@ from analyst import stream_analyst
 import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
+DIST = pathlib.Path(__file__).parent / "dist"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize DB schema on startup
     get_conn()
     from ingest.scheduler import start_scheduler
     scheduler = start_scheduler()
@@ -28,20 +31,18 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Sovereign API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Sovereign API", version="1.0.0", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
 
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    os.getenv("FRONTEND_URL", ""),
-]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o for o in ALLOWED_ORIGINS if o],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# All API routes live under /api
+router = APIRouter(prefix="/api")
 
 
 # ── Pydantic models ──────────────────────────────────────────────────────────
@@ -96,31 +97,16 @@ class StressRequest(BaseModel):
     shock_magnitude: float
 
 
-class AcknowledgeRequest(BaseModel):
-    pass
-
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _get_sub_scores(iso3: str) -> Optional[dict]:
     conn = get_conn()
     row = conn.execute(
-        """
-        SELECT sub_scores_json FROM sovereign_risk
-        WHERE country_iso3 = ?
-        ORDER BY computed_at DESC LIMIT 1
-        """,
+        "SELECT sub_scores_json FROM sovereign_risk WHERE country_iso3 = ? ORDER BY computed_at DESC LIMIT 1",
         [iso3],
     ).fetchone()
     if row and row[0]:
         return json.loads(row[0])
-    return None
-
-
-def _get_risk_delta(iso3: str) -> Optional[float]:
-    sub = _get_sub_scores(iso3)
-    if sub:
-        return sub.get("delta_7d")
     return None
 
 
@@ -131,8 +117,6 @@ def _top_drivers(sub: Optional[dict]) -> list[str]:
         "political_instability", "macro_stress", "market_stress",
         "sanctions_exposure", "governance_deficit", "sentiment_deterioration",
     ]
-    scored = [(k, sub.get(k, 0)) for k in driver_keys]
-    top = sorted(scored, key=lambda x: x[1], reverse=True)[:3]
     labels = {
         "political_instability": "political instability",
         "macro_stress": "macro stress",
@@ -141,35 +125,18 @@ def _top_drivers(sub: Optional[dict]) -> list[str]:
         "governance_deficit": "governance deficit",
         "sentiment_deterioration": "sentiment deterioration",
     }
-    return [labels[k] for k, _ in top if sub.get(k, 0) > 40]
+    scored = sorted([(k, sub.get(k, 0)) for k in driver_keys], key=lambda x: x[1], reverse=True)
+    return [labels[k] for k, v in scored[:3] if v > 40]
 
 
-# ── Routes ───────────────────────────────────────────────────────────────────
+# ── API Routes (/api/*) ───────────────────────────────────────────────────────
 
-@app.get("/")
-def root():
-    return {
-        "service": "Sovereign Geopolitical Risk Intelligence Platform",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "countries": "/countries",
-            "country_detail": "/countries/{iso3}",
-            "alerts": "/alerts",
-            "portfolio": "/portfolio",
-            "analyst": "/analyst",
-            "graph": "/graph",
-        },
-        "docs": "/docs",
-    }
-
-
-@app.get("/health")
+@router.get("/health")
 def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
-@app.get("/countries", response_model=list[CountrySummary])
+@router.get("/countries", response_model=list[CountrySummary])
 def list_countries():
     conn = get_conn()
     countries = hydrate_countries(conn)
@@ -191,7 +158,7 @@ def list_countries():
     return result
 
 
-@app.get("/countries/{iso3}", response_model=CountryDetail)
+@router.get("/countries/{iso3}", response_model=CountryDetail)
 def get_country(iso3: str):
     iso3 = iso3.upper()
     conn = get_conn()
@@ -199,23 +166,15 @@ def get_country(iso3: str):
     c = next((x for x in countries if x.iso3 == iso3), None)
     if not c:
         raise HTTPException(status_code=404, detail="Country not found")
-
     sub = _get_sub_scores(iso3)
     delta = sub.get("delta_7d") if sub else None
-
     return CountryDetail(
-        iso3=c.iso3,
-        name=c.name,
-        region=c.region,
-        sovereign_risk_score=c.sovereign_risk_score,
-        risk_tier=c.risk_tier,
-        risk_delta_7d=delta,
-        top_risk_drivers=_top_drivers(sub),
+        iso3=c.iso3, name=c.name, region=c.region,
+        sovereign_risk_score=c.sovereign_risk_score, risk_tier=c.risk_tier,
+        risk_delta_7d=delta, top_risk_drivers=_top_drivers(sub),
         is_primary_sanctions_target=c.is_primary_sanctions_target,
-        gdp_usd=c.gdp_usd,
-        gdp_growth_pct=c.gdp_growth_pct,
-        inflation_pct=c.inflation_pct,
-        govt_debt_pct_gdp=c.govt_debt_pct_gdp,
+        gdp_usd=c.gdp_usd, gdp_growth_pct=c.gdp_growth_pct,
+        inflation_pct=c.inflation_pct, govt_debt_pct_gdp=c.govt_debt_pct_gdp,
         trade_openness=c.trade_openness,
         political_stability_score=c.political_stability_score,
         corruption_control_score=c.corruption_control_score,
@@ -228,26 +187,18 @@ def get_country(iso3: str):
     )
 
 
-@app.get("/countries/{iso3}/history")
+@router.get("/countries/{iso3}/history")
 def get_country_history(iso3: str):
     iso3 = iso3.upper()
     conn = get_conn()
     rows = conn.execute(
-        """
-        SELECT score, tier, computed_at FROM sovereign_risk
-        WHERE country_iso3 = ?
-        ORDER BY computed_at ASC
-        LIMIT 360
-        """,
+        "SELECT score, tier, computed_at FROM sovereign_risk WHERE country_iso3 = ? ORDER BY computed_at ASC LIMIT 360",
         [iso3],
     ).fetchall()
-    return [
-        {"score": r[0], "tier": r[1], "date": r[2].isoformat() if hasattr(r[2], "isoformat") else str(r[2])}
-        for r in rows
-    ]
+    return [{"score": r[0], "tier": r[1], "date": r[2].isoformat() if hasattr(r[2], "isoformat") else str(r[2])} for r in rows]
 
 
-@app.get("/countries/{iso3}/contagion")
+@router.get("/countries/{iso3}/contagion")
 def get_country_contagion(iso3: str):
     iso3 = iso3.upper()
     conn = get_conn()
@@ -255,39 +206,30 @@ def get_country_contagion(iso3: str):
         """
         SELECT ce.target_country, ce.transmission_weight, ce.channel
         FROM contagion_edges ce
-        INNER JOIN (
-            SELECT source_country, MAX(computed_at) max_at FROM contagion_edges GROUP BY source_country
-        ) l ON ce.source_country = l.source_country AND ce.computed_at = l.max_at
-        WHERE ce.source_country = ?
-        ORDER BY ce.transmission_weight DESC
+        INNER JOIN (SELECT source_country, MAX(computed_at) max_at FROM contagion_edges GROUP BY source_country) l
+            ON ce.source_country = l.source_country AND ce.computed_at = l.max_at
+        WHERE ce.source_country = ? ORDER BY ce.transmission_weight DESC
         """,
         [iso3],
     ).fetchall()
 
     from analytics.contagion import propagate_shock, build_contagion_graph
-    from analytics.country_risk import run as get_scores
-    countries = hydrate_countries(conn)
     import pandas as pd
+    countries = hydrate_countries(conn)
     corr_rows = conn.execute(
         "SELECT country_a, country_b, correlation_30d FROM correlations WHERE date = (SELECT MAX(date) FROM correlations)"
     ).fetchall()
     correlations = pd.DataFrame(corr_rows, columns=["country_a", "country_b", "correlation_30d"])
     G = build_contagion_graph(countries, correlations)
-
     score_row = conn.execute(
-        "SELECT score FROM sovereign_risk WHERE country_iso3 = ? ORDER BY computed_at DESC LIMIT 1",
-        [iso3],
+        "SELECT score FROM sovereign_risk WHERE country_iso3 = ? ORDER BY computed_at DESC LIMIT 1", [iso3]
     ).fetchone()
     shock = float(score_row[0]) if score_row else 50.0
-
     propagated = propagate_shock(G, iso3, shock)
-
     return {
         "epicenter": iso3,
         "shock_magnitude": shock,
-        "direct_edges": [
-            {"target": r[0], "weight": r[1], "channel": r[2]} for r in rows
-        ],
+        "direct_edges": [{"target": r[0], "weight": r[1], "channel": r[2]} for r in rows],
         "propagated_impacts": [
             {"country": k, "estimated_risk_increase": round(v, 2)}
             for k, v in sorted(propagated.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -295,7 +237,7 @@ def get_country_contagion(iso3: str):
     }
 
 
-@app.get("/alerts", response_model=list[AlertModel])
+@router.get("/alerts", response_model=list[AlertModel])
 def list_alerts():
     conn = get_conn()
     rows = conn.execute(
@@ -303,19 +245,13 @@ def list_alerts():
         SELECT id, country_iso3, severity, trigger, message,
                contagion_risk_json, portfolio_impact_pct, created_at, acknowledged
         FROM alerts
-        ORDER BY
-            CASE severity WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END,
-            created_at DESC
+        ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END, created_at DESC
         LIMIT 100
         """
     ).fetchall()
     return [
         AlertModel(
-            id=r[0],
-            country_iso3=r[1],
-            severity=r[2],
-            trigger=r[3],
-            message=r[4],
+            id=r[0], country_iso3=r[1], severity=r[2], trigger=r[3], message=r[4],
             contagion_risk=json.loads(r[5]) if r[5] else [],
             portfolio_impact_pct=r[6],
             created_at=r[7].isoformat() if hasattr(r[7], "isoformat") else str(r[7]),
@@ -325,50 +261,39 @@ def list_alerts():
     ]
 
 
-@app.post("/alerts/{alert_id}/acknowledge")
+@router.post("/alerts/{alert_id}/acknowledge")
 def acknowledge_alert(alert_id: str):
     conn = get_conn()
     conn.execute("UPDATE alerts SET acknowledged = TRUE WHERE id = ?", [alert_id])
     return {"acknowledged": True}
 
 
-@app.get("/portfolio")
+@router.get("/portfolio")
 def get_portfolio():
     conn = get_conn()
     risk_rows = conn.execute(
         """
-        SELECT sr.country_iso3, sr.score, sr.tier
-        FROM sovereign_risk sr
-        INNER JOIN (
-            SELECT country_iso3, MAX(computed_at) max_at FROM sovereign_risk GROUP BY country_iso3
-        ) l ON sr.country_iso3 = l.country_iso3 AND sr.computed_at = l.max_at
+        SELECT sr.country_iso3, sr.score, sr.tier FROM sovereign_risk sr
+        INNER JOIN (SELECT country_iso3, MAX(computed_at) max_at FROM sovereign_risk GROUP BY country_iso3) l
+            ON sr.country_iso3 = l.country_iso3 AND sr.computed_at = l.max_at
         """
     ).fetchall()
     risk_lookup = {r[0]: {"score": r[1], "tier": r[2]} for r in risk_rows}
-
     from ingest.markets import COUNTRY_ETFS
     holdings = []
     for ticker, weight in DEMO_PORTFOLIO.items():
         iso3 = next((k for k, v in COUNTRY_ETFS.items() if v == ticker), None)
         r = risk_lookup.get(iso3, {}) if iso3 else {}
-        holdings.append({
-            "ticker": ticker,
-            "weight": weight,
-            "country_iso3": iso3,
-            "risk_score": r.get("score"),
-            "risk_tier": r.get("tier"),
-        })
-
+        holdings.append({"ticker": ticker, "weight": weight, "country_iso3": iso3, "risk_score": r.get("score"), "risk_tier": r.get("tier")})
     return {"holdings": holdings, "aum": 1_000_000}
 
 
-@app.get("/portfolio/impact")
+@router.get("/portfolio/impact")
 def get_portfolio_impact():
     conn = get_conn()
     risk_rows = conn.execute(
         """
-        SELECT sr.country_iso3,
-               CAST(json_extract(sr.sub_scores_json, '$.delta_7d') AS DOUBLE) AS delta_7d
+        SELECT sr.country_iso3, CAST(json_extract(sr.sub_scores_json, '$.delta_7d') AS DOUBLE) AS delta_7d
         FROM sovereign_risk sr
         INNER JOIN (SELECT country_iso3, MAX(computed_at) max_at FROM sovereign_risk GROUP BY country_iso3) l
             ON sr.country_iso3 = l.country_iso3 AND sr.computed_at = l.max_at
@@ -379,49 +304,34 @@ def get_portfolio_impact():
     return {
         "total_shock_pct": impact.total_shock_pct,
         "total_shock_usd": impact.total_shock_usd,
-        "position_attribution": [
-            {"ticker": p.ticker, "weight": p.weight, "shock_contribution_pct": p.shock_contribution_pct}
-            for p in impact.position_attribution
-        ],
-        "worst_country_exposures": [
-            {"country": e.country, "portfolio_weight_exposed": e.portfolio_weight_exposed, "shock_pct": e.shock_pct}
-            for e in impact.worst_country_exposures
-        ],
+        "position_attribution": [{"ticker": p.ticker, "weight": p.weight, "shock_contribution_pct": p.shock_contribution_pct} for p in impact.position_attribution],
+        "worst_country_exposures": [{"country": e.country, "portfolio_weight_exposed": e.portfolio_weight_exposed, "shock_pct": e.shock_pct} for e in impact.worst_country_exposures],
     }
 
 
-@app.post("/portfolio/stress")
+@router.post("/portfolio/stress")
 def stress_test(req: StressRequest):
     iso3 = req.country.upper()
-    risk_deltas = {iso3: req.shock_magnitude}
-    impact = estimate_portfolio_impact(risk_deltas)
+    impact = estimate_portfolio_impact({iso3: req.shock_magnitude})
     return {
         "scenario": {"country": iso3, "shock_magnitude": req.shock_magnitude},
         "total_shock_pct": impact.total_shock_pct,
         "total_shock_usd": impact.total_shock_usd,
-        "position_attribution": [
-            {"ticker": p.ticker, "weight": p.weight, "shock_contribution_pct": p.shock_contribution_pct}
-            for p in impact.position_attribution
-        ],
+        "position_attribution": [{"ticker": p.ticker, "weight": p.weight, "shock_contribution_pct": p.shock_contribution_pct} for p in impact.position_attribution],
     }
 
 
-@app.get("/graph")
+@router.get("/graph")
 def get_graph():
     conn = get_conn()
     node_rows = conn.execute(
         """
-        SELECT sr.country_iso3, sr.score, sr.tier
-        FROM sovereign_risk sr
+        SELECT sr.country_iso3, sr.score, sr.tier FROM sovereign_risk sr
         INNER JOIN (SELECT country_iso3, MAX(computed_at) max_at FROM sovereign_risk GROUP BY country_iso3) l
             ON sr.country_iso3 = l.country_iso3 AND sr.computed_at = l.max_at
         """
     ).fetchall()
-    nodes = [
-        {"id": r[0], "name": COUNTRY_METADATA.get(r[0], (r[0], ""))[0], "score": r[1], "tier": r[2]}
-        for r in node_rows
-    ]
-
+    nodes = [{"id": r[0], "name": COUNTRY_METADATA.get(r[0], (r[0], ""))[0], "score": r[1], "tier": r[2]} for r in node_rows]
     edge_rows = conn.execute(
         """
         SELECT ce.source_country, ce.target_country, ce.transmission_weight, ce.channel
@@ -432,28 +342,17 @@ def get_graph():
         """
     ).fetchall()
     edges = [{"source": r[0], "target": r[1], "weight": r[2], "channel": r[3]} for r in edge_rows]
-
     return {"nodes": nodes, "edges": edges}
 
 
-@app.get("/ingest/status")
+@router.get("/ingest/status")
 def ingest_status():
     conn = get_conn()
-    rows = conn.execute(
-        """
-        SELECT source, status, rows_written, error_msg, ran_at
-        FROM ingest_log
-        ORDER BY ran_at DESC LIMIT 20
-        """
-    ).fetchall()
-    return [
-        {"source": r[0], "status": r[1], "rows": r[2], "error": r[3],
-         "ran_at": r[4].isoformat() if hasattr(r[4], "isoformat") else str(r[4])}
-        for r in rows
-    ]
+    rows = conn.execute("SELECT source, status, rows_written, error_msg, ran_at FROM ingest_log ORDER BY ran_at DESC LIMIT 20").fetchall()
+    return [{"source": r[0], "status": r[1], "rows": r[2], "error": r[3], "ran_at": r[4].isoformat() if hasattr(r[4], "isoformat") else str(r[4])} for r in rows]
 
 
-@app.post("/ingest/run")
+@router.post("/ingest/run")
 def run_ingest(background_tasks: BackgroundTasks):
     def _run():
         from ingest import world_bank, sanctions, markets, news
@@ -466,16 +365,38 @@ def run_ingest(background_tasks: BackgroundTasks):
         contagion.run()
         portfolio_impact.run()
         alerts.run()
-
     background_tasks.add_task(_run)
     return {"status": "ingest started"}
 
 
-@app.post("/analyst")
+@router.post("/analyst")
 async def analyst_endpoint(req: AnalystRequest):
     async def generate():
         async for chunk in stream_analyst(req.message, req.history, req.country_context):
             yield f"data: {json.dumps({'text': chunk})}\n\n"
         yield "data: [DONE]\n\n"
-
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+# ── Register router then serve frontend ──────────────────────────────────────
+
+app.include_router(router)
+
+if DIST.exists():
+    # Serve static assets (JS/CSS chunks)
+    app.mount("/assets", StaticFiles(directory=str(DIST / "assets")), name="assets")
+
+    @app.get("/")
+    async def serve_root():
+        return FileResponse(str(DIST / "index.html"))
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        file = DIST / full_path
+        if file.exists() and file.is_file():
+            return FileResponse(str(file))
+        return FileResponse(str(DIST / "index.html"))
+else:
+    @app.get("/")
+    def root():
+        return {"service": "Sovereign API", "ui": "not built — run npm build in web/", "docs": "/api/docs"}

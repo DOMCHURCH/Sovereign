@@ -2,14 +2,22 @@ services:
   - type: web
     name: sovereign-api
     runtime: python
-    buildCommand: pip install -r requirements.txt && python -m textblob.download_corpora && python seed.py && python analytics/country_risk.py && python analytics/contagion.py && python analytics/alerts.py
+    rootDir: api
+    buildCommand: >
+      pip install -r requirements.txt &&
+      python -m textblob.download_corpora &&
+      npm --prefix ../web ci &&
+      npm --prefix ../web run build &&
+      cp -r ../web/dist ./dist &&
+      python seed.py &&
+      python analytics/country_risk.py &&
+      python analytics/contagion.py &&
+      python analytics/alerts.py
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: ANTHROPIC_API_KEY
+      - key: CEREBRAS_API_KEY
         sync: false
       - key: NEWS_API_KEY
-        sync: false
-      - key: FRONTEND_URL
         sync: false
       - key: DATABASE_PATH
         value: /data/sovereign.duckdb
