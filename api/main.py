@@ -2,7 +2,6 @@ import os
 import json
 import pathlib
 import threading
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -12,42 +11,36 @@ from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import sys
+sys.path.insert(0, os.path.dirname(__file__))
+
 from db import get_conn, log_ingest
 from ontology import hydrate_countries, COUNTRY_METADATA
 from analytics.portfolio_impact import estimate_portfolio_impact, DEMO_PORTFOLIO
 from analyst import stream_analyst
 
-import sys
-sys.path.insert(0, os.path.dirname(__file__))
-
 DIST = pathlib.Path(__file__).parent / "dist"
 
 
 def _bootstrap():
-    print("Seeding in-memory database...")
-    import seed
-    seed.run()
-    from analytics import country_risk, contagion, alerts as alerts_module
-    country_risk.run()
-    contagion.run()
-    alerts_module.run()
-    print("Bootstrap complete.")
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    get_conn()
-    threading.Thread(target=_bootstrap, daemon=True).start()
     try:
-        from ingest.scheduler import start_scheduler
-        scheduler = start_scheduler()
-        yield
-        scheduler.shutdown(wait=False)
-    except Exception:
-        yield
+        print("Seeding in-memory database...")
+        get_conn()
+        import seed
+        seed.run()
+        from analytics import country_risk, contagion, alerts as alerts_module
+        country_risk.run()
+        contagion.run()
+        alerts_module.run()
+        print("Bootstrap complete.")
+    except Exception as e:
+        print(f"Bootstrap error: {e}")
 
 
-app = FastAPI(title="Sovereign API", version="1.0.0", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
+# Runs once per cold start when the module is imported
+threading.Thread(target=_bootstrap, daemon=True).start()
+
+app = FastAPI(title="Sovereign API", version="1.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
 app.add_middleware(
     CORSMiddleware,
