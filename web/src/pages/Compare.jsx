@@ -9,7 +9,7 @@ const TIER_ORDER = { severe: 4, high: 3, elevated: 2, low: 1 }
 
 function StatCard({ label, value, sub, color }) {
   return (
-    <div className="rounded-lg border p-3 flex flex-col gap-1" style={{ borderColor: '#1e1e2e', background: '#12121a' }}>
+    <div className="glass-card rounded-xl p-3 flex flex-col gap-1">
       <div className="text-xs text-slate-500 font-mono uppercase tracking-wide">{label}</div>
       <div className="text-xl font-bold font-mono" style={{ color: color || '#e2e8f0' }}>{value}</div>
       {sub && <div className="text-xs text-slate-600">{sub}</div>}
@@ -225,7 +225,7 @@ export default function Compare() {
             </div>
 
             {/* Chart */}
-            <div className="rounded-xl border p-5" style={{ borderColor: '#1e1e2e', background: '#12121a' }}>
+            <div className="glass-card rounded-xl p-5">
               <div className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-4">Risk Score Over Time</div>
               <ResponsiveContainer width="100%" height={320}>
                 <LineChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
@@ -268,8 +268,8 @@ export default function Compare() {
             <div className="grid grid-cols-2 gap-3">
               {selectedCountries.map((c, i) => (
                 <div key={c.iso3}
-                     className="rounded-xl border p-4 cursor-pointer hover:bg-white/3 transition-colors"
-                     style={{ borderColor: `${COLORS[i]}40`, background: '#12121a' }}
+                     className="glass-card glass-card-hover rounded-xl p-4 cursor-pointer transition-colors"
+                     style={{ borderColor: `${COLORS[i]}40` }}
                      onClick={() => navigate(`/country/${c.iso3}`)}>
                   <div className="flex items-start justify-between mb-3">
                     <div>

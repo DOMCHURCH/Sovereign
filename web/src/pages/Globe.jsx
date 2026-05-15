@@ -8,19 +8,54 @@ import AlertFeed from '../components/AlertFeed'
 const GEO_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson'
 
 const TIER_COLORS = {
-  low:      '#22c55e',
-  elevated: '#eab308',
-  high:     '#f97316',
-  severe:   '#ef4444',
-  none:     '#1e293b',
+  low:      '#4ade80',  // brighter green
+  elevated: '#fbbf24',  // amber
+  high:     '#fb923c',  // orange
+  severe:   '#f87171',  // red
+  none:     '#1e2d3d',  // dark blue-grey (ocean-ish, not pure black)
 }
 
 const TIER_ALT = {
-  severe: 0.025,
-  high:   0.015,
+  severe:   0.03,
+  high:     0.018,
   elevated: 0.008,
-  low:    0.003,
-  none:   0.002,
+  low:      0.003,
+  none:     0.001,
+}
+
+const TIER_CAP_ALPHA = {
+  severe:   0.9,
+  high:     0.8,
+  elevated: 0.7,
+  low:      0.65,
+  none:     0.5,
+}
+
+const CAPITALS = {
+  AFG:{lat:34.5,lng:69.2}, AGO:{lat:-8.8,lng:13.2}, ARE:{lat:24.5,lng:54.4},
+  ARG:{lat:-34.6,lng:-58.4}, AUS:{lat:-35.3,lng:149.1}, AZE:{lat:40.4,lng:49.9},
+  BGD:{lat:23.7,lng:90.4}, BLR:{lat:53.9,lng:27.6}, BRA:{lat:-15.8,lng:-47.9},
+  CAN:{lat:45.4,lng:-75.7}, CHE:{lat:46.9,lng:7.5}, CHL:{lat:-33.5,lng:-70.6},
+  CHN:{lat:39.9,lng:116.4}, COL:{lat:4.7,lng:-74.1}, CUB:{lat:23.1,lng:-82.4},
+  DEU:{lat:52.5,lng:13.4}, DZA:{lat:36.7,lng:3.0}, EGY:{lat:30.1,lng:31.2},
+  ESP:{lat:40.4,lng:-3.7}, ETH:{lat:9.0,lng:38.7}, FRA:{lat:48.9,lng:2.3},
+  GBR:{lat:51.5,lng:-0.1}, GHA:{lat:5.6,lng:-0.2}, HKG:{lat:22.3,lng:114.2},
+  IDN:{lat:-6.2,lng:106.8}, IND:{lat:28.6,lng:77.2}, IRN:{lat:35.7,lng:51.4},
+  IRQ:{lat:33.3,lng:44.4}, ISR:{lat:31.8,lng:35.2}, ITA:{lat:41.9,lng:12.5},
+  JOR:{lat:31.9,lng:35.9}, JPN:{lat:35.7,lng:139.7}, KAZ:{lat:51.2,lng:71.5},
+  KEN:{lat:-1.3,lng:36.8}, KOR:{lat:37.6,lng:127.0}, KWT:{lat:29.4,lng:47.9},
+  LBN:{lat:33.9,lng:35.5}, LBY:{lat:32.9,lng:13.2}, MAR:{lat:34.0,lng:-6.8},
+  MEX:{lat:19.4,lng:-99.1}, MMR:{lat:19.7,lng:96.1}, MYS:{lat:3.2,lng:101.7},
+  NGA:{lat:9.1,lng:7.2}, NIC:{lat:12.1,lng:-86.3}, NLD:{lat:52.1,lng:4.3},
+  NOR:{lat:59.9,lng:10.7}, OMN:{lat:23.6,lng:58.6}, PAK:{lat:33.7,lng:73.1},
+  PER:{lat:-12.0,lng:-77.0}, PHL:{lat:14.6,lng:121.0}, POL:{lat:52.2,lng:21.0},
+  PRK:{lat:39.0,lng:125.8}, QAT:{lat:25.3,lng:51.5}, RUS:{lat:55.8,lng:37.6},
+  SAU:{lat:24.7,lng:46.7}, SDN:{lat:15.6,lng:32.5}, SGP:{lat:1.3,lng:103.8},
+  SWE:{lat:59.3,lng:18.1}, SYR:{lat:33.5,lng:36.3}, THA:{lat:13.8,lng:100.5},
+  TUR:{lat:39.9,lng:32.9}, TWN:{lat:25.0,lng:121.5}, TZA:{lat:-6.2,lng:35.7},
+  UKR:{lat:50.4,lng:30.5}, USA:{lat:38.9,lng:-77.0}, UZB:{lat:41.3,lng:69.3},
+  VEN:{lat:10.5,lng:-66.9}, VNM:{lat:21.0,lng:105.8}, YEM:{lat:15.4,lng:44.2},
+  ZAF:{lat:-25.7,lng:28.2}, ZWE:{lat:-17.8,lng:31.1},
 }
 
 function hexToRgba(hex, alpha) {
@@ -135,6 +170,14 @@ export default function Globe() {
     [alerts]
   )
 
+  // Pulsing rings for severe/high countries
+  const ringsData = useMemo(() =>
+    countries
+      .filter(c => (c.risk_tier === 'severe' || c.risk_tier === 'high') && CAPITALS[c.iso3])
+      .map(c => ({ lat: CAPITALS[c.iso3].lat, lng: CAPITALS[c.iso3].lng, iso3: c.iso3, tier: c.risk_tier })),
+    [countries]
+  )
+
   const handleClick = useCallback((feat) => {
     const iso3 = getIso3(feat)
     if (iso3) navigate(`/country/${iso3}`)
@@ -152,7 +195,7 @@ export default function Globe() {
     const tier = c?.risk_tier || 'none'
     const color = TIER_COLORS[tier] || TIER_COLORS.none
     const isHov = hovered && getIso3(hovered) === iso3
-    return hexToRgba(color, isHov ? 0.95 : 0.75)
+    return hexToRgba(color, isHov ? 0.95 : (TIER_CAP_ALPHA[tier] ?? 0.5))
   }, [byIso3, hovered])
 
   const polygonSideColor = useCallback((feat) => {
@@ -189,7 +232,7 @@ export default function Globe() {
   }, [byIso3])
 
   // Stable stroke color — must not be inline arrow or it recreates every render
-  const polygonStroke = useCallback(() => 'rgba(99,102,241,0.25)', [])
+  const polygonStroke = useCallback(() => 'rgba(148,163,184,0.15)', [])
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: '#070710' }}>
@@ -201,9 +244,10 @@ export default function Globe() {
           height={dims.h}
           onGlobeReady={onGlobeReady}
           backgroundColor="#070710"
+          backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
           globeImageUrl="//cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg"
-          atmosphereColor="#6366f1"
-          atmosphereAltitude={0.15}
+          atmosphereColor="#a78bfa"
+          atmosphereAltitude={0.25}
           polygonsData={geoData}
           polygonCapColor={polygonColor}
           polygonSideColor={polygonSideColor}
@@ -213,6 +257,12 @@ export default function Globe() {
           onPolygonClick={handleClick}
           onPolygonHover={handleHover}
           polygonsTransitionDuration={200}
+          ringsData={ringsData}
+          ringColor={r => r.tier === 'severe' ? '#ef444488' : '#f9731666'}
+          ringMaxRadius={r => r.tier === 'severe' ? 4 : 3}
+          ringPropagationSpeed={r => r.tier === 'severe' ? 3 : 2}
+          ringRepeatPeriod={r => r.tier === 'severe' ? 900 : 1400}
+          ringAltitude={0.01}
         />
 
         {/* Drag hint */}
@@ -222,7 +272,7 @@ export default function Globe() {
 
         {/* Bottom status bar */}
         <div className="absolute bottom-0 left-0 right-0 flex items-center gap-6 px-4 py-2 text-xs font-mono"
-             style={{ background: 'rgba(7,7,16,0.9)', borderTop: '1px solid #1e1e2e' }}>
+             style={{ background: 'rgba(7,7,16,0.92)', borderTop: '1px solid #1e1e2e', backdropFilter: 'blur(16px)' }}>
           <span className="text-slate-500">ALERTS:</span>
           {alertCounts.critical > 0 && <span className="text-red-400">🔴 {alertCounts.critical} critical</span>}
           {alertCounts.warning > 0 && <span className="text-yellow-400">⚠️ {alertCounts.warning} warning</span>}
@@ -243,53 +293,82 @@ export default function Globe() {
       </div>
 
       {/* Right sidebar */}
-      <div className="w-72 flex flex-col border-l overflow-hidden"
-           style={{ borderColor: '#1e1e2e', background: '#0d0d14' }}>
+      <div className="w-72 flex flex-col overflow-hidden"
+           style={{
+             borderLeft: '1px solid #1e1e2e',
+             background: 'linear-gradient(180deg, #0d0d18 0%, #0a0a14 100%)',
+           }}>
+        {/* Section header: Top Risk Countries */}
         <div className="px-4 pt-4 pb-2 border-b" style={{ borderColor: '#1e1e2e' }}>
-          <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase">Top Risk Countries</h2>
+          <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: '#f87171' }} />
+            Top Risk Countries
+          </h2>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {top10.map((c, i) => (
-            <div
-              key={c.iso3}
-              className="flex items-center gap-3 px-4 py-2.5 cursor-pointer border-b hover:bg-white/5 transition-colors"
-              style={{ borderColor: '#1e1e2e' }}
-              onClick={() => navigate(`/country/${c.iso3}`)}
-            >
-              <span className="text-slate-600 font-mono text-xs w-4">{i + 1}</span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-200 text-sm truncate font-medium">{c.name}</span>
-                  {criticalSet.has(c.iso3) && <span className="text-red-400 text-xs">🔴</span>}
+          {top10.map((c, i) => {
+            const score = c.sovereign_risk_score ?? 0
+            const barColor = TIER_COLORS[c.risk_tier] || '#64748b'
+            return (
+              <div
+                key={c.iso3}
+                className="flex items-center gap-3 px-4 py-2.5 cursor-pointer border-b hover:bg-white/5 transition-colors"
+                style={{
+                  borderColor: '#1e1e2e',
+                  borderLeft: `3px solid ${barColor}40`,
+                }}
+                onClick={() => navigate(`/country/${c.iso3}`)}
+              >
+                <span className="text-slate-600 font-mono text-xs w-4">{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-200 text-sm truncate font-medium">{c.name}</span>
+                    {criticalSet.has(c.iso3) && <span className="text-red-400 text-xs">🔴</span>}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <RiskBadge tier={c.risk_tier} size="xs" />
+                    <span className="text-xs font-mono" style={{ color: deltaColor(c.risk_delta_7d) }}>
+                      {deltaArrow(c.risk_delta_7d)}
+                    </span>
+                  </div>
+                  {/* Score bar */}
+                  <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(score, 100)}%`,
+                        background: `linear-gradient(90deg, ${barColor}99, ${barColor})`,
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <RiskBadge tier={c.risk_tier} size="xs" />
-                  <span className="text-xs font-mono" style={{ color: deltaColor(c.risk_delta_7d) }}>
-                    {deltaArrow(c.risk_delta_7d)}
-                  </span>
-                </div>
+                <span className="font-mono text-sm font-bold shrink-0"
+                      style={{ color: TIER_COLORS[c.risk_tier] || '#64748b' }}>
+                  {c.sovereign_risk_score?.toFixed(0)}
+                </span>
               </div>
-              <span className="font-mono text-sm font-bold shrink-0"
-                    style={{ color: TIER_COLORS[c.risk_tier] || '#64748b' }}>
-                {c.sovereign_risk_score?.toFixed(0)}
-              </span>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
+        {/* Section header: Live Alerts */}
         <div className="border-t" style={{ borderColor: '#1e1e2e' }}>
           <div className="px-4 pt-3 pb-1">
-            <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase">Live Alerts</h2>
+            <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: '#fbbf24' }} />
+              Live Alerts
+            </h2>
           </div>
           <div className="px-2 pb-3 max-h-48 overflow-y-auto">
             <AlertFeed limit={5} compact />
           </div>
         </div>
 
+        {/* Legend */}
         <div className="px-4 py-3 border-t" style={{ borderColor: '#1e1e2e' }}>
           <div className="flex items-center gap-3 text-xs font-mono flex-wrap">
-            {[['low','#22c55e'],['elevated','#eab308'],['high','#f97316'],['severe','#ef4444']].map(([t, c]) => (
+            {[['low', TIER_COLORS.low], ['elevated', TIER_COLORS.elevated], ['high', TIER_COLORS.high], ['severe', TIER_COLORS.severe]].map(([t, c]) => (
               <span key={t} className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full inline-block" style={{ background: c }} />
                 <span className="text-slate-500">{t}</span>

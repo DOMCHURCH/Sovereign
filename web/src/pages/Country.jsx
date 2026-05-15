@@ -29,9 +29,9 @@ function fmt(v, decimals = 1) {
 
 function StatCard({ label, value, unit = '', color }) {
   return (
-    <div className="rounded-lg p-3 border" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
-      <div className="text-xs text-slate-500 mb-1">{label}</div>
-      <div className="text-base font-mono font-semibold" style={{ color: color || '#e2e8f0' }}>
+    <div className="glass-card card-accent-top rounded-xl p-3">
+      <div className="text-xs text-slate-500 mb-1.5 font-mono uppercase tracking-wide">{label}</div>
+      <div className="text-base font-mono font-bold" style={{ color: color || '#c4b5fd' }}>
         {value ?? '—'}{value != null && unit ? unit : ''}
       </div>
     </div>
@@ -156,20 +156,31 @@ export default function Country() {
       </div>
 
       {/* AI Risk Assessment */}
-      <div className="rounded-xl border p-4" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
-        <div className="flex items-center gap-2 mb-2">
-          <h3 className="text-xs font-mono text-indigo-400 uppercase tracking-widest">AI Risk Assessment</h3>
-          {aiLoading && <span className="text-xs text-slate-600 animate-pulse">analyzing...</span>}
+      <div className="glass-card card-accent-top rounded-xl p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+               style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)' }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <h3 className="text-xs font-mono font-semibold uppercase tracking-widest" style={{ color: '#a78bfa' }}>AI Risk Assessment</h3>
+          {aiLoading && (
+            <span className="flex items-center gap-1 text-xs text-slate-600 ml-1">
+              <span className="w-3 h-3 border border-slate-600 border-t-indigo-500 rounded-full animate-spin" />
+              analyzing
+            </span>
+          )}
         </div>
         <p className="text-sm text-slate-300 leading-relaxed">
-          {aiInsight || (aiLoading ? '' : 'No analysis available.')}
+          {aiInsight || (aiLoading ? <span className="shimmer inline-block w-full h-4 rounded" /> : 'No analysis available.')}
         </p>
       </div>
 
       {/* Top row: sub-scores + macro stats */}
       <div className="grid grid-cols-2 gap-4">
         {/* Sub-score bar chart */}
-        <div className="rounded-xl border p-4" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
+        <div className="glass-card rounded-xl p-4">
           <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-3">Risk Factor Breakdown</h3>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={subData} layout="vertical" margin={{ top: 0, right: 40, left: 0, bottom: 0 }}>
@@ -207,7 +218,7 @@ export default function Country() {
 
       {/* 90-day history */}
       {histData.length > 0 && (
-        <div className="rounded-xl border p-4" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
+        <div className="glass-card rounded-xl p-4">
           <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-3">90-Day Risk Score History</h3>
           <ResponsiveContainer width="100%" height={140}>
             <LineChart data={histData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
@@ -229,7 +240,7 @@ export default function Country() {
       {/* Bottom row: portfolio + alerts + contagion */}
       <div className="grid grid-cols-3 gap-4">
         {/* Portfolio */}
-        <div className="rounded-xl border p-4" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
+        <div className="glass-card rounded-xl p-4">
           <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-3">Portfolio Exposure</h3>
           {myTicker ? (
             <div className="space-y-2">
@@ -263,13 +274,13 @@ export default function Country() {
         </div>
 
         {/* Alerts */}
-        <div className="rounded-xl border p-4" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
+        <div className="glass-card rounded-xl p-4">
           <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-3">Active Alerts</h3>
           <AlertFeed limit={4} compact />
         </div>
 
         {/* Contagion */}
-        <div className="rounded-xl border p-4" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
+        <div className="glass-card rounded-xl p-4">
           <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-3">Contagion Channels</h3>
           {contagion?.direct_edges?.length > 0 ? (
             <div className="space-y-1.5">
@@ -291,7 +302,7 @@ export default function Country() {
       </div>
 
       {/* News Feed */}
-      <div className="rounded-xl border p-4" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
+      <div className="glass-card rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest">Latest News</h3>
           {newsLoading && <span className="text-xs text-slate-600 animate-pulse">fetching...</span>}
