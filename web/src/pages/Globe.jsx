@@ -108,14 +108,14 @@ const CAT_LABELS = {
   gang_crisis:         'Gang / Crime Crisis',
 }
 
-const CONFLICT_ALT    = { major: 0.07, significant: 0.045, minor: 0.025 }
-const CONFLICT_RADIUS = { major: 0.55, significant: 0.38, minor: 0.22 }
+const CONFLICT_ALT    = { major: 0.14, significant: 0.09, minor: 0.055 }
+const CONFLICT_RADIUS = { major: 1.4,  significant: 0.95, minor: 0.6  }
 
 // Arc colors for interstate wars: [startColor, endColor]
 const ARC_COLORS = {
-  major:       ['rgba(239,68,68,0.9)',  'rgba(239,68,68,0.4)'],
-  significant: ['rgba(249,115,22,0.8)', 'rgba(249,115,22,0.3)'],
-  minor:       ['rgba(251,191,36,0.7)', 'rgba(251,191,36,0.2)'],
+  major:       ['rgba(239,68,68,1)',    'rgba(239,68,68,0.5)'],
+  significant: ['rgba(249,115,22,0.95)','rgba(249,115,22,0.4)'],
+  minor:       ['rgba(251,191,36,0.9)', 'rgba(251,191,36,0.3)'],
 }
 
 // Cache GeoJSON at module level so it survives navigation (no CDN round-trip on remount)
@@ -215,13 +215,21 @@ export default function Globe() {
     [alerts]
   )
 
-  // Pulsing rings for severe/high countries
-  const ringsData = useMemo(() =>
-    countries
+  // Pulsing rings: severe/high countries + all active conflict zones
+  const ringsData = useMemo(() => {
+    const countryRings = countries
       .filter(c => (c.risk_tier === 'severe' || c.risk_tier === 'high') && CAPITALS[c.iso3])
-      .map(c => ({ lat: CAPITALS[c.iso3].lat, lng: CAPITALS[c.iso3].lng, iso3: c.iso3, tier: c.risk_tier })),
-    [countries]
-  )
+      .map(c => ({ lat: CAPITALS[c.iso3].lat, lng: CAPITALS[c.iso3].lng, iso3: c.iso3, tier: c.risk_tier, kind: 'country' }))
+
+    const conflictRings = conflicts
+      .filter(c => c.intensity === 'major' || c.intensity === 'significant')
+      .map(c => ({
+        lat: c.lat, lng: c.lng, iso3: c.id, tier: c.intensity, kind: 'conflict',
+        color: CAT_COLORS[c.category] || '#ef4444',
+      }))
+
+    return [...countryRings, ...conflictRings]
+  }, [countries, conflicts])
 
   const handleClick = useCallback((feat) => {
     const iso3 = getIso3(feat)
@@ -292,18 +300,22 @@ export default function Globe() {
   const conflictLabel = useCallback(d => {
     const color = CAT_COLORS[d.category] || '#ffd700'
     const catLabel = CAT_LABELS[d.category] || d.category || d.type
-    return `<div style="background:rgba(10,8,18,0.97);border:1px solid ${color}55;border-radius:9px;padding:11px 14px;font-family:monospace;min-width:200px;max-width:260px;box-shadow:0 4px 24px rgba(0,0,0,0.6)">
-      <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
-        <span style="width:8px;height:8px;border-radius:50%;background:${color};box-shadow:0 0 8px ${color};flex-shrink:0"></span>
-        <span style="color:#f1f5f9;font-size:13px;font-weight:700">${d.name}</span>
+    const intensityIcon = d.intensity === 'major' ? '🔴' : d.intensity === 'significant' ? '🟠' : '🟡'
+    const sourceTag = d.source === 'acled' ? '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(74,222,128,0.15);color:#4ade80;border:1px solid rgba(74,222,128,0.3)">ACLED LIVE</span>' : d.live ? '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3)">LIVE</span>' : '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(100,116,139,0.1);color:#64748b;border:1px solid rgba(100,116,139,0.2)">CURATED</span>'
+    const fatalities = d.fatalities != null ? `<div style="color:#f87171;font-size:10px;margin-top:3px">💀 ${d.fatalities.toLocaleString()} fatalities (7d)</div>` : ''
+    return `<div style="background:rgba(7,5,16,0.98);border:1px solid ${color}66;border-radius:10px;padding:12px 15px;font-family:monospace;min-width:220px;max-width:280px;box-shadow:0 6px 32px rgba(0,0,0,0.8),0 0 0 1px ${color}22">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <span style="color:#f8fafc;font-size:14px;font-weight:800;line-height:1.3">${d.name}</span>
+        ${sourceTag}
       </div>
-      <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-        <span style="font-size:10px;padding:2px 7px;border-radius:4px;background:${color}22;color:${color};border:1px solid ${color}44;text-transform:uppercase;letter-spacing:0.05em">${d.intensity}</span>
-        <span style="font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(255,255,255,0.06);color:#94a3b8;border:1px solid rgba(255,255,255,0.1)">${catLabel}</span>
+      <div style="display:flex;gap:5px;margin-bottom:7px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:10px;padding:2px 8px;border-radius:4px;background:${color}25;color:${color};border:1px solid ${color}55;text-transform:uppercase;font-weight:700;letter-spacing:0.06em">${d.intensity}</span>
+        <span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(255,255,255,0.07);color:#94a3b8;border:1px solid rgba(255,255,255,0.12)">${catLabel}</span>
       </div>
-      <div style="color:#94a3b8;font-size:11px;margin-bottom:4px">⚔️ ${d.parties}</div>
-      <div style="color:#64748b;font-size:10px;line-height:1.5">${d.description}</div>
-      <div style="color:#475569;font-size:10px;margin-top:5px">Since ${d.since}</div>
+      <div style="color:#cbd5e1;font-size:11px;margin-bottom:5px;font-weight:600">⚔️ ${d.parties}</div>
+      <div style="color:#64748b;font-size:10px;line-height:1.55;margin-bottom:4px">${d.description}</div>
+      ${fatalities}
+      <div style="color:#334155;font-size:10px;margin-top:6px;border-top:1px solid rgba(255,255,255,0.06);padding-top:5px">Active since ${d.since}</div>
     </div>`
   }, [])
 
@@ -364,17 +376,23 @@ export default function Globe() {
           arcEndLat="endLat"
           arcEndLng="endLng"
           arcColor={arcColor}
-          arcAltitude={0.18}
-          arcStroke={0.6}
-          arcDashLength={0.4}
-          arcDashGap={0.2}
-          arcDashAnimateTime={2200}
+          arcAltitude={0.22}
+          arcStroke={1.4}
+          arcDashLength={0.5}
+          arcDashGap={0.15}
+          arcDashAnimateTime={1600}
           arcLabel={arcLabel}
           ringsData={ringsData}
-          ringColor={r => r.tier === 'severe' ? '#ef444488' : '#f9731666'}
-          ringMaxRadius={r => r.tier === 'severe' ? 4 : 3}
-          ringPropagationSpeed={r => r.tier === 'severe' ? 3 : 2}
-          ringRepeatPeriod={r => r.tier === 'severe' ? 900 : 1400}
+          ringColor={r => {
+            if (r.kind === 'conflict') return (r.color || '#ef4444') + 'cc'
+            return r.tier === 'severe' ? '#ef444499' : '#f9731666'
+          }}
+          ringMaxRadius={r => {
+            if (r.kind === 'conflict') return r.tier === 'major' ? 6 : 4
+            return r.tier === 'severe' ? 4 : 3
+          }}
+          ringPropagationSpeed={r => r.kind === 'conflict' ? (r.tier === 'major' ? 4 : 2.5) : (r.tier === 'severe' ? 3 : 2)}
+          ringRepeatPeriod={r => r.kind === 'conflict' ? (r.tier === 'major' ? 700 : 1100) : (r.tier === 'severe' ? 900 : 1400)}
           ringAltitude={0.01}
         />
 
