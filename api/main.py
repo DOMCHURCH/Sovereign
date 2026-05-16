@@ -267,11 +267,205 @@ _CONFLICTS = [
 
 @router.get("/conflicts")
 def get_conflicts():
-    return _CONFLICTS
+    return _fetch_live_conflicts()
 
 
+# ── Conflict intelligence pipeline ────────────────────────────────────────────
+# Priority order: Valyu API → GDELT (free) → curated static data
+# Results cached for 30 min to avoid hammering external APIs.
 
-def get_country_contagion(iso3: str):
+import time as _time
+_conflict_cache: dict = {"data": None, "ts": 0, "source": "curated"}
+_CACHE_TTL = 1800  # 30 minutes
+
+# Capital city coordinates for geocoding country mentions
+_CAPITALS_COORDS: dict[str, tuple[float, float]] = {
+    "AFG":(34.5,69.2),"AGO":(-8.8,13.2),"ARE":(24.5,54.4),"ARG":(-34.6,-58.4),
+    "AUS":(-35.3,149.1),"AZE":(40.4,49.9),"BGD":(23.7,90.4),"BLR":(53.9,27.6),
+    "BRA":(-15.8,-47.9),"CAN":(45.4,-75.7),"CHE":(46.9,7.5),"CHL":(-33.5,-70.6),
+    "CHN":(39.9,116.4),"COD":(-4.3,15.3),"COL":(4.7,-74.1),"CUB":(23.1,-82.4),
+    "DEU":(52.5,13.4),"DZA":(36.7,3.0),"EGY":(30.1,31.2),"ESP":(40.4,-3.7),
+    "ETH":(9.0,38.7),"FRA":(48.9,2.3),"GBR":(51.5,-0.1),"GHA":(5.6,-0.2),
+    "HKG":(22.3,114.2),"HTI":(18.5,-72.3),"IDN":(-6.2,106.8),"IND":(28.6,77.2),
+    "IRN":(35.7,51.4),"IRQ":(33.3,44.4),"ISR":(31.8,35.2),"ITA":(41.9,12.5),
+    "JOR":(31.9,35.9),"JPN":(35.7,139.7),"KAZ":(51.2,71.5),"KEN":(-1.3,36.8),
+    "KOR":(37.6,127.0),"KWT":(29.4,47.9),"LBN":(33.9,35.5),"LBY":(32.9,13.2),
+    "MAR":(34.0,-6.8),"MEX":(19.4,-99.1),"MLI":(12.6,-8.0),"MMR":(19.7,96.1),
+    "MOZ":(-25.9,32.6),"MYS":(3.2,101.7),"NER":(13.5,2.1),"NGA":(9.1,7.2),
+    "NIC":(12.1,-86.3),"NLD":(52.1,4.3),"NOR":(59.9,10.7),"OMN":(23.6,58.6),
+    "PAK":(33.7,73.1),"PER":(-12.0,-77.0),"PHL":(14.6,121.0),"POL":(52.2,21.0),
+    "PRK":(39.0,125.8),"QAT":(25.3,51.5),"RUS":(55.8,37.6),"SAU":(24.7,46.7),
+    "SDN":(15.6,32.5),"SGP":(1.3,103.8),"SOM":(2.0,45.3),"SSD":(4.9,31.6),
+    "SWE":(59.3,18.1),"SYR":(33.5,36.3),"THA":(13.8,100.5),"TUR":(39.9,32.9),
+    "TWN":(25.0,121.5),"TZA":(-6.2,35.7),"UKR":(50.4,30.5),"USA":(38.9,-77.0),
+    "UZB":(41.3,69.3),"VEN":(10.5,-66.9),"VNM":(21.0,105.8),"YEM":(15.4,44.2),
+    "ZAF":(-25.7,28.2),"ZWE":(-17.8,31.1),"BFA":(12.4,-1.5),"CMR":(3.9,11.5),
+    "CAF":(4.4,18.6),"ARM":(40.2,44.5),"AZE":(40.4,49.9),"MYN":(19.7,96.1),
+}
+
+# Threat queries mirroring globalthreatmap's 29-category approach
+_THREAT_QUERIES = [
+    "armed conflict war military operations attack killed",
+    "civil war insurgency rebel fighting clashes",
+    "military strike airstrike bombing offensive",
+    "territorial dispute border conflict troops",
+    "terrorism attack militant group killed",
+]
+
+# Country name → ISO3 mapping for geocoding article text
+_NAME_TO_ISO3: dict[str, str] = {}
+
+
+def _build_name_index():
+    global _NAME_TO_ISO3
+    if _NAME_TO_ISO3:
+        return
+    from ontology import COUNTRY_METADATA
+    for iso3, (name, _) in COUNTRY_METADATA.items():
+        _NAME_TO_ISO3[name.lower()] = iso3
+    # Common aliases
+    extras = {
+        "russia": "RUS", "ukraine": "UKR", "israel": "ISR", "gaza": "ISR",
+        "sudan": "SDN", "myanmar": "MMR", "burma": "MMR", "congo": "COD",
+        "drc": "COD", "democratic republic of the congo": "COD",
+        "houthis": "YEM", "mali": "MLI", "burkina faso": "BFA",
+        "mozambique": "MOZ", "somalia": "SOM", "haiti": "HTI",
+        "north korea": "PRK", "south korea": "KOR", "taiwan": "TWN",
+        "iran": "IRN", "iraq": "IRQ", "syria": "SYR", "lebanon": "LBN",
+        "pakistan": "PAK", "afghanistan": "AFG", "ethiopia": "ETH",
+        "nigeria": "NGA", "niger": "NER", "colombia": "COL",
+        "venezuela": "VEN", "philippines": "PHL", "kashmir": "IND",
+        "west bank": "ISR", "hezbollah": "LBN", "hamas": "ISR",
+        "sahel": "MLI", "kurdistan": "IRQ",
+    }
+    _NAME_TO_ISO3.update(extras)
+
+
+def _score_text(text: str) -> dict[str, int]:
+    """Count conflict-related country mentions in a block of text."""
+    _build_name_index()
+    text_lower = text.lower()
+    counts: dict[str, int] = {}
+    for name, iso3 in _NAME_TO_ISO3.items():
+        if name in text_lower:
+            counts[iso3] = counts.get(iso3, 0) + 1
+    return counts
+
+
+def _articles_to_conflicts(articles: list[dict]) -> list[dict]:
+    """Convert raw news articles → conflict zone objects with coordinates."""
+    totals: dict[str, int] = {}
+    for art in articles:
+        text = f"{art.get('title', '')} {str(art.get('content', ''))[:400]}"
+        for iso3, count in _score_text(text).items():
+            totals[iso3] = totals.get(iso3, 0) + count
+
+    result = []
+    for iso3, count in sorted(totals.items(), key=lambda x: -x[1])[:35]:
+        if iso3 not in _CAPITALS_COORDS:
+            continue
+        lat, lng = _CAPITALS_COORDS[iso3]
+        intensity = "major" if count >= 10 else "significant" if count >= 5 else "minor"
+        # Enrich with curated metadata where available
+        curated = next((c for c in _CONFLICTS if iso3 in c.get("countries", [])), None)
+        from ontology import COUNTRY_METADATA
+        country_name = COUNTRY_METADATA.get(iso3, (iso3, ""))[0]
+        result.append({
+            "id": f"live-{iso3}",
+            "name": curated["name"] if curated else f"{country_name} – Conflict Activity",
+            "lat": lat, "lng": lng,
+            "intensity": intensity,
+            "type": curated["type"] if curated else "insurgency",
+            "parties": curated.get("parties", "") if curated else "",
+            "since": curated.get("since", 2024) if curated else 2024,
+            "countries": [iso3],
+            "description": (curated["description"] if curated else "") + f" ({count} live news signals)",
+            "live": True,
+        })
+    return result
+
+
+def _fetch_valyu(api_key: str) -> list[dict] | None:
+    """Query Valyu search API — mirrors globalthreatmap's searchEvents() approach."""
+    import requests as req
+    articles = []
+    for query in _THREAT_QUERIES[:2]:  # 2 queries to stay fast
+        try:
+            resp = req.post(
+                "https://api.valyu.network/v1/search",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"query": query, "searchType": "news", "maxNumResults": 25,
+                      "start_date": (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")},
+                timeout=12,
+            )
+            if resp.ok:
+                articles.extend(resp.json().get("results", []))
+        except Exception:
+            continue
+    return _articles_to_conflicts(articles) if articles else None
+
+
+def _fetch_gdelt() -> list[dict] | None:
+    """Free GDELT DOC API — no key required, updated every 15 min."""
+    import requests as req
+    try:
+        resp = req.get(
+            "https://api.gdeltproject.org/api/v2/doc/doc",
+            params={
+                "query": "war conflict military attack killed fighting",
+                "mode": "ArtList",
+                "maxrecords": "100",
+                "format": "json",
+                "timespan": "24h",
+                "sourcelang": "english",
+            },
+            timeout=15,
+        )
+        if resp.ok:
+            raw = resp.json().get("articles", [])
+            articles = [{"title": a.get("title", ""), "content": ""} for a in raw]
+            return _articles_to_conflicts(articles) if articles else None
+    except Exception:
+        pass
+    return None
+
+
+def _fetch_live_conflicts() -> list[dict]:
+    """Return live conflict data with 30-minute in-process cache."""
+    now = _time.time()
+    if _conflict_cache["data"] and now - _conflict_cache["ts"] < _CACHE_TTL:
+        return _conflict_cache["data"]
+
+    valyu_key = os.getenv("VALYU_API_KEY", "")
+    data = None
+    source = "curated"
+
+    if valyu_key:
+        data = _fetch_valyu(valyu_key)
+        if data:
+            source = "valyu"
+
+    if not data:
+        data = _fetch_gdelt()
+        if data:
+            source = "gdelt"
+
+    if not data:
+        data = _CONFLICTS
+
+    _conflict_cache["data"] = data
+    _conflict_cache["ts"] = now
+    _conflict_cache["source"] = source
+    return data
+
+
+@router.get("/conflicts/source")
+def get_conflicts_source():
+    """Returns which data source is currently powering the conflict layer."""
+    return {"source": _conflict_cache.get("source", "curated"), "cached_at": _conflict_cache.get("ts", 0)}
+
+
+@router.get("/countries/{iso3}/contagion")
     iso3 = iso3.upper()
     conn = get_conn()
     rows = conn.execute(

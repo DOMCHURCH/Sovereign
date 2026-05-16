@@ -29,6 +29,7 @@ export const api = {
   countryNews: (iso3) => get(`/countries/${iso3}/news`),
   acknowledgeAllAlerts: () => post('/alerts/acknowledge-all', {}),
   conflicts: () => get('/conflicts'),
+  conflictsSource: () => get('/conflicts/source'),
   graph: () => get('/graph'),
   ingestStatus: () => get('/ingest/status'),
   runIngest: () => post('/ingest/run', {}),

@@ -103,6 +103,8 @@ export default function Globe() {
   const [dims, setDims] = useState({ w: window.innerWidth - 288, h: window.innerHeight - 48 })
   const [conflicts, setConflicts] = useState([])
   const [showConflicts, setShowConflicts] = useState(true)
+  const [conflictSource, setConflictSource] = useState('curated')
+  const [conflictsLoading, setConflictsLoading] = useState(false)
   const globeRef = useRef(null)
   const navigate = useNavigate()
 
@@ -111,7 +113,9 @@ export default function Globe() {
     api.countries().then(d => { setCountries(d); setLastRefresh(new Date()) }).catch(() => {})
     api.alerts().then(setAlerts).catch(() => {})
     api.portfolioImpact().then(setImpact).catch(() => {})
-    api.conflicts().then(setConflicts).catch(() => {})
+    setConflictsLoading(true)
+    api.conflicts().then(d => { setConflicts(d); setConflictsLoading(false) }).catch(() => setConflictsLoading(false))
+    api.conflictsSource().then(d => setConflictSource(d.source)).catch(() => {})
 
     const t = setInterval(() => {
       api.countries().then(d => { setCountries(d); setLastRefresh(new Date()) }).catch(() => {})
@@ -240,6 +244,12 @@ export default function Globe() {
 
   // Stable stroke color — must not be inline arrow or it recreates every render
   const polygonStroke = useCallback(() => 'rgba(148,163,184,0.15)', [])
+
+  const refreshConflicts = useCallback(() => {
+    setConflictsLoading(true)
+    api.conflicts().then(d => { setConflicts(d); setConflictsLoading(false) }).catch(() => setConflictsLoading(false))
+    api.conflictsSource().then(d => setConflictSource(d.source)).catch(() => {})
+  }, [])
 
   const conflictColor  = useCallback(d => CONFLICT_COLORS[d.intensity] || '#ffd700', [])
   const conflictAlt    = useCallback(d => CONFLICT_ALT[d.intensity]    || 0.03, [])
@@ -413,25 +423,51 @@ export default function Globe() {
             ))}
           </div>
           {/* Conflict zones toggle */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-mono">
-              <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#ff4444', boxShadow: '0 0 5px #ff4444' }} />
-              <span className="text-slate-400">Conflict zones</span>
-              {conflicts.length > 0 && (
-                <span className="text-slate-600">({conflicts.length})</span>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-mono">
+                <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: '#ff4444', boxShadow: '0 0 5px #ff4444' }} />
+                <span className="text-slate-400">Conflict zones</span>
+                {conflicts.length > 0 && <span className="text-slate-600">({conflicts.length})</span>}
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={refreshConflicts}
+                  disabled={conflictsLoading}
+                  className="text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-40 text-xs px-1"
+                  title="Refresh live data"
+                >
+                  {conflictsLoading ? '⟳' : '↺'}
+                </button>
+                <button
+                  onClick={() => setShowConflicts(v => !v)}
+                  className="text-xs font-mono px-2 py-0.5 rounded transition-all"
+                  style={{
+                    background: showConflicts ? 'rgba(255,68,68,0.15)' : 'rgba(255,255,255,0.04)',
+                    color: showConflicts ? '#ff6666' : '#475569',
+                    border: `1px solid ${showConflicts ? 'rgba(255,68,68,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                  }}
+                >
+                  {showConflicts ? 'ON' : 'OFF'}
+                </button>
+              </div>
+            </div>
+            {/* Data source badge */}
+            <div className="flex items-center gap-1.5">
+              <span
+                className="text-xs font-mono px-1.5 py-0.5 rounded"
+                style={{
+                  background: conflictSource === 'curated' ? 'rgba(100,116,139,0.1)' : 'rgba(74,222,128,0.1)',
+                  color: conflictSource === 'curated' ? '#475569' : '#4ade80',
+                  border: `1px solid ${conflictSource === 'curated' ? 'rgba(100,116,139,0.2)' : 'rgba(74,222,128,0.25)'}`,
+                }}
+              >
+                {conflictSource === 'valyu' ? '⚡ VALYU LIVE' : conflictSource === 'gdelt' ? '📡 GDELT LIVE' : '📋 CURATED'}
+              </span>
+              {conflictSource !== 'curated' && (
+                <span className="text-xs text-slate-700 font-mono">30m cache</span>
               )}
             </div>
-            <button
-              onClick={() => setShowConflicts(v => !v)}
-              className="text-xs font-mono px-2 py-0.5 rounded transition-all"
-              style={{
-                background: showConflicts ? 'rgba(255,68,68,0.15)' : 'rgba(255,255,255,0.04)',
-                color: showConflicts ? '#ff6666' : '#475569',
-                border: `1px solid ${showConflicts ? 'rgba(255,68,68,0.3)' : 'rgba(255,255,255,0.08)'}`,
-              }}
-            >
-              {showConflicts ? 'ON' : 'OFF'}
-            </button>
           </div>
         </div>
       </div>
