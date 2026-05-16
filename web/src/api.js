@@ -33,6 +33,9 @@ export const api = {
   graph: () => get('/graph'),
   ingestStatus: () => get('/ingest/status'),
   runIngest: () => post('/ingest/run', {}),
+  gti: () => get('/gti'),
+  newsFeed: (iso3) => iso3 ? get(`/news/feed?iso3=${iso3}`) : get('/news/feed'),
+  marketSnapshot: () => get('/market/snapshot'),
 }
 
 export async function streamAnalyst(message, history, countryContext, onChunk, onDone) {

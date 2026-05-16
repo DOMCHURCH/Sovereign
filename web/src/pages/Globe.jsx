@@ -133,6 +133,8 @@ export default function Globe() {
   const [showConflicts, setShowConflicts] = useState(true)
   const [conflictSource, setConflictSource] = useState('curated')
   const [conflictsLoading, setConflictsLoading] = useState(false)
+  const [gtiData, setGtiData] = useState([])
+  const [marketData, setMarketData] = useState(null)
   const globeRef = useRef(null)
   const navigate = useNavigate()
 
@@ -145,10 +147,14 @@ export default function Globe() {
     api.conflicts().then(d => { setConflicts(d); setConflictsLoading(false) }).catch(() => setConflictsLoading(false))
     api.conflictsSource().then(d => setConflictSource(d.source)).catch(() => {})
 
+    api.gti().then(d => setGtiData(d.slice(0, 8))).catch(() => {})
+    api.marketSnapshot().then(setMarketData).catch(() => {})
+
     const t = setInterval(() => {
       api.countries().then(d => { setCountries(d); setLastRefresh(new Date()) }).catch(() => {})
       api.alerts().then(setAlerts).catch(() => {})
       api.portfolioImpact().then(setImpact).catch(() => {})
+      api.gti().then(d => setGtiData(d.slice(0, 8))).catch(() => {})
     }, 60000)
     return () => clearInterval(t)
   }, [])
@@ -458,6 +464,50 @@ export default function Globe() {
             )
           })}
         </div>
+
+        {/* GTI — Geopolitical Tension Index */}
+        {gtiData.length > 0 && (
+          <div className="border-t" style={{ borderColor: '#1e1e2e' }}>
+            <div className="px-4 pt-3 pb-1">
+              <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: '#f97316' }} />
+                Tension Index (GTI)
+              </h2>
+            </div>
+            <div className="px-4 pb-3 space-y-1.5">
+              {gtiData.map(d => {
+                const gtiColor = d.gti >= 75 ? '#ef4444' : d.gti >= 55 ? '#f97316' : d.gti >= 35 ? '#fbbf24' : '#4ade80'
+                return (
+                  <div key={d.iso3} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 rounded px-1 -mx-1 py-0.5 transition-colors"
+                       onClick={() => navigate(`/country/${d.iso3}`)}>
+                    <span className="font-mono text-xs text-slate-500 w-8 shrink-0">{d.iso3}</span>
+                    <div className="flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                      <div className="h-1.5 rounded-full transition-all"
+                           style={{ width: `${d.gti}%`, background: `linear-gradient(90deg, ${gtiColor}88, ${gtiColor})` }} />
+                    </div>
+                    <span className="font-mono text-xs shrink-0" style={{ color: gtiColor }}>{d.gti.toFixed(0)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Market ticker — top movers */}
+        {marketData && Object.keys(marketData.equities || {}).length > 0 && (
+          <div className="border-t px-4 py-2.5 overflow-x-auto" style={{ borderColor: '#1e1e2e' }}>
+            <div className="flex gap-3 text-xs font-mono whitespace-nowrap">
+              {Object.entries(marketData.equities).slice(0, 6).map(([ticker, d]) => (
+                <span key={ticker} className="flex items-center gap-1">
+                  <span className="text-slate-500">{ticker}</span>
+                  <span style={{ color: d.change_pct >= 0 ? '#4ade80' : '#f87171' }}>
+                    {d.change_pct >= 0 ? '+' : ''}{d.change_pct.toFixed(1)}%
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Section header: Live Alerts */}
         <div className="border-t" style={{ borderColor: '#1e1e2e' }}>

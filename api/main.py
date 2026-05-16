@@ -279,6 +279,97 @@ def get_conflicts():
     return _fetch_live_conflicts()
 
 
+@router.get("/gti")
+def get_gti():
+    """Geopolitical Tension Index — fast-moving composite per country."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT country_iso3, gti, tier, components_json, computed_at FROM gti_scores ORDER BY gti DESC"
+        ).fetchall()
+        if rows:
+            return [
+                {
+                    "iso3": r[0],
+                    "gti": r[1],
+                    "tier": r[2],
+                    "components": json.loads(r[3]) if r[3] else {},
+                    "name": COUNTRY_METADATA.get(r[0], (r[0], ""))[0],
+                    "computed_at": r[4].isoformat() if hasattr(r[4], "isoformat") else str(r[4]),
+                }
+                for r in rows
+            ]
+    except Exception:
+        pass
+    # Compute on-demand if table not yet populated
+    from analytics.gti import run as gti_run
+    scores = gti_run()
+    return list(scores.values())
+
+
+@router.get("/news/feed")
+def get_news_feed(iso3: str | None = None, limit: int = 50):
+    """Recent news articles with sentiment and event classification."""
+    conn = get_conn()
+    try:
+        if iso3:
+            rows = conn.execute(
+                """SELECT url, iso3, title, source, published_at, sentiment_score, event_type, summary
+                   FROM news_articles WHERE iso3 = ? ORDER BY published_at DESC LIMIT ?""",
+                [iso3.upper(), limit],
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT url, iso3, title, source, published_at, sentiment_score, event_type, summary
+                   FROM news_articles ORDER BY published_at DESC LIMIT ?""",
+                [limit],
+            ).fetchall()
+        return [
+            {
+                "url": r[0], "iso3": r[1], "title": r[2], "source": r[3],
+                "published_at": r[4].isoformat() if hasattr(r[4], "isoformat") else str(r[4]),
+                "sentiment": r[5], "event_type": r[6], "summary": r[7],
+                "country_name": COUNTRY_METADATA.get(r[1], (r[1], ""))[0],
+            }
+            for r in rows
+        ]
+    except Exception:
+        return []
+
+
+@router.get("/market/snapshot")
+def get_market_snapshot():
+    """Live market snapshot via yfinance — equity ETFs + commodities."""
+    try:
+        import yfinance as yf
+        from ingest.markets import COUNTRY_ETFS, COMMODITIES
+        all_tickers = list(COUNTRY_ETFS.values()) + list(COMMODITIES.values())
+        data = yf.download(all_tickers, period="5d", auto_adjust=True, progress=False)
+        close = data["Close"] if "Close" in data.columns else data
+        result = {"equities": {}, "commodities": {}}
+        ticker_to_iso3 = {v: k for k, v in COUNTRY_ETFS.items()}
+        for ticker in all_tickers:
+            if ticker not in close.columns:
+                continue
+            prices = close[ticker].dropna()
+            if len(prices) < 2:
+                continue
+            latest = float(prices.iloc[-1])
+            prev   = float(prices.iloc[-2])
+            chg    = (latest - prev) / prev if prev else 0
+            entry  = {"price": round(latest, 2), "change_pct": round(chg * 100, 2)}
+            iso3 = ticker_to_iso3.get(ticker)
+            if iso3:
+                entry["iso3"] = iso3
+                entry["country"] = COUNTRY_METADATA.get(iso3, (iso3, ""))[0]
+                result["equities"][ticker] = entry
+            else:
+                result["commodities"][ticker] = entry
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ── Conflict intelligence pipeline ────────────────────────────────────────────
 # Priority order: Valyu API → GDELT (free) → curated static data
 # Results cached for 30 min to avoid hammering external APIs.
@@ -446,25 +537,40 @@ def _fetch_gdelt() -> list[dict] | None:
 
 
 def _fetch_live_conflicts() -> list[dict]:
-    """Return live conflict data with 30-minute in-process cache."""
+    """Return live conflict data with 30-minute in-process cache.
+    Priority: ACLED > Valyu > GDELT > curated static."""
     now = _time.time()
     if _conflict_cache["data"] and now - _conflict_cache["ts"] < _CACHE_TTL:
         return _conflict_cache["data"]
 
-    valyu_key = os.getenv("VALYU_API_KEY", "")
     data = None
     source = "curated"
 
-    if valyu_key:
-        data = _fetch_valyu(valyu_key)
-        if data:
-            source = "valyu"
+    # 1. ACLED (free researcher API — best quality)
+    try:
+        from ingest.acled import fetch_recent_events
+        acled_data = fetch_recent_events(days=7)
+        if acled_data:
+            data = acled_data
+            source = "acled"
+    except Exception:
+        pass
 
+    # 2. Valyu search API
+    if not data:
+        valyu_key = os.getenv("VALYU_API_KEY", "")
+        if valyu_key:
+            data = _fetch_valyu(valyu_key)
+            if data:
+                source = "valyu"
+
+    # 3. GDELT (free, no key)
     if not data:
         data = _fetch_gdelt()
         if data:
             source = "gdelt"
 
+    # 4. Curated static list
     if not data:
         data = _CONFLICTS
 
@@ -645,7 +751,7 @@ def ingest_status():
 def run_ingest(background_tasks: BackgroundTasks):
     def _run():
         from ingest import world_bank, sanctions, markets, news
-        from analytics import country_risk, contagion, portfolio_impact, alerts
+        from analytics import country_risk, contagion, portfolio_impact, alerts, gti
         world_bank.run()
         sanctions.run()
         markets.run()
@@ -654,6 +760,10 @@ def run_ingest(background_tasks: BackgroundTasks):
         contagion.run()
         portfolio_impact.run()
         alerts.run()
+        gti.run()
+        # Bust conflict cache so next request re-fetches ACLED
+        _conflict_cache["data"] = None
+        _conflict_cache["ts"] = 0
     background_tasks.add_task(_run)
     return {"status": "ingest started"}
 

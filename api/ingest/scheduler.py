@@ -1,15 +1,24 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
-def _run_all_ingest():
-    from ingest import world_bank, sanctions, markets, news
-    from analytics import country_risk, contagion, portfolio_impact, alerts
+def _run_news_and_gti():
+    """Fast cycle: news + GTI every 15 minutes."""
+    from ingest import news
+    from analytics import gti
+    news.run()
+    gti.run()
 
+
+def _run_full():
+    """Full refresh every 6 hours."""
+    from ingest import world_bank, sanctions, markets, news
+    from analytics import country_risk, contagion, portfolio_impact, alerts, gti
     world_bank.run()
     sanctions.run()
     markets.run()
@@ -18,13 +27,27 @@ def _run_all_ingest():
     contagion.run()
     portfolio_impact.run()
     alerts.run()
+    gti.run()
 
 
 def start_scheduler() -> BackgroundScheduler:
     scheduler = BackgroundScheduler(timezone="UTC")
 
-    # Full refresh every 6 hours
-    scheduler.add_job(_run_all_ingest, CronTrigger(hour="*/6"), id="full_refresh", replace_existing=True)
+    # Fast cycle: news sentiment + GTI every 15 minutes
+    scheduler.add_job(
+        _run_news_and_gti,
+        IntervalTrigger(minutes=15),
+        id="news_gti",
+        replace_existing=True,
+    )
+
+    # Full data refresh every 6 hours
+    scheduler.add_job(
+        _run_full,
+        CronTrigger(hour="*/6"),
+        id="full_refresh",
+        replace_existing=True,
+    )
 
     scheduler.start()
     return scheduler

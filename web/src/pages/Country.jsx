@@ -81,9 +81,10 @@ export default function Country() {
     if (!iso3) return
     setNews([])
     setNewsLoading(true)
-    api.countryNews(iso3)
-      .then(setNews)
-      .catch(() => {})
+    // Try new RSS-based feed first, fall back to legacy news endpoint
+    api.newsFeed(iso3)
+      .then(d => { if (d.length) setNews(d); else return api.countryNews(iso3).then(setNews) })
+      .catch(() => api.countryNews(iso3).then(setNews).catch(() => {}))
       .finally(() => setNewsLoading(false))
   }, [iso3])
 
@@ -301,40 +302,60 @@ export default function Country() {
         </div>
       </div>
 
-      {/* News Feed */}
+      {/* News Intelligence Feed */}
       <div className="glass-card rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest">Latest News</h3>
+          <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest">News Intelligence</h3>
           {newsLoading && <span className="text-xs text-slate-600 animate-pulse">fetching...</span>}
         </div>
         {news.length === 0 && !newsLoading ? (
-          <p className="text-xs text-slate-600">No news available — add NEWS_API_KEY to enable live headlines.</p>
+          <p className="text-xs text-slate-600">No news — run ingest to populate RSS feeds.</p>
         ) : (
-          <div className="space-y-3">
-            {news.map((article, i) => (
-              <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
-                 className="block hover:bg-white/5 rounded-lg p-2 -mx-2 transition-colors group">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm text-slate-300 group-hover:text-white transition-colors leading-snug line-clamp-2">
-                      {article.title}
-                    </p>
-                    {article.description && (
-                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{article.description}</p>
-                    )}
+          <div className="space-y-2.5">
+            {news.map((article, i) => {
+              const sentiment = article.sentiment ?? article.sentiment_score
+              const sentColor = sentiment < -0.3 ? '#f87171' : sentiment > 0.2 ? '#4ade80' : '#64748b'
+              const eventColors = {
+                military_conflict: '#ef4444', sanctions: '#f97316', trade_dispute: '#fbbf24',
+                diplomatic_crisis: '#a78bfa', terrorism: '#ff6b6b', political_instability: '#fb923c',
+                economic_crisis: '#ef4444', humanitarian: '#22d3ee', general: '#475569',
+              }
+              const evtColor = eventColors[article.event_type] || '#475569'
+              return (
+                <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
+                   className="block hover:bg-white/5 rounded-lg p-2.5 -mx-2 transition-colors group border border-transparent hover:border-white/5">
+                  <div className="flex items-start gap-2.5">
+                    {/* Sentiment bar */}
+                    <div className="w-0.5 rounded-full shrink-0 mt-1"
+                         style={{ height: 40, background: sentColor, opacity: 0.8 }} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-slate-300 group-hover:text-white transition-colors leading-snug line-clamp-2">
+                        {article.title}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <span className="text-xs font-mono text-slate-600">{article.source}</span>
+                        {article.published_at && (
+                          <span className="text-xs text-slate-700">
+                            {new Date(article.published_at).toLocaleDateString()}
+                          </span>
+                        )}
+                        {article.event_type && article.event_type !== 'general' && (
+                          <span className="text-xs font-mono px-1.5 py-0.5 rounded"
+                                style={{ background: `${evtColor}18`, color: evtColor, border: `1px solid ${evtColor}33` }}>
+                            {article.event_type.replace(/_/g, ' ')}
+                          </span>
+                        )}
+                        {sentiment != null && (
+                          <span className="text-xs font-mono ml-auto" style={{ color: sentColor }}>
+                            {sentiment >= 0 ? '+' : ''}{sentiment.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-600">
-                  <span>{article.source}</span>
-                  {article.published_at && (
-                    <>
-                      <span>·</span>
-                      <span>{new Date(article.published_at).toLocaleDateString()}</span>
-                    </>
-                  )}
-                </div>
-              </a>
-            ))}
+                </a>
+              )
+            })}
           </div>
         )}
       </div>

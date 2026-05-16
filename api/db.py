@@ -128,6 +128,30 @@ def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
         )
     """)
 
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS news_articles (
+            url             VARCHAR PRIMARY KEY,
+            iso3            VARCHAR NOT NULL,
+            title           VARCHAR,
+            source          VARCHAR,
+            published_at    TIMESTAMP,
+            sentiment_score DOUBLE,
+            event_type      VARCHAR,
+            summary         VARCHAR,
+            fetched_at      TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS gti_scores (
+            country_iso3    VARCHAR PRIMARY KEY,
+            gti             DOUBLE NOT NULL,
+            tier            VARCHAR NOT NULL,
+            components_json VARCHAR,
+            computed_at     TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """)
+
 
 def log_ingest(source: str, status: str, rows: int = 0, error: str | None = None) -> None:
     conn = get_conn()
