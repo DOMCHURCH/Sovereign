@@ -466,6 +466,7 @@ def get_conflicts_source():
 
 
 @router.get("/countries/{iso3}/contagion")
+def get_country_contagion(iso3: str):
     iso3 = iso3.upper()
     conn = get_conn()
     rows = conn.execute(
