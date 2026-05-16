@@ -36,6 +36,8 @@ export const api = {
   gti: () => get('/gti'),
   newsFeed: (iso3) => iso3 ? get(`/news/feed?iso3=${iso3}`) : get('/news/feed'),
   marketSnapshot: () => get('/market/snapshot'),
+  dashboard: () => get('/dashboard'),
+  runScenario: (country, shock_type, shock_magnitude) => post('/scenario', { country, shock_type, shock_magnitude }),
 }
 
 export async function streamAnalyst(message, history, countryContext, onChunk, onDone) {

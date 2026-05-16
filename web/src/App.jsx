@@ -1,13 +1,159 @@
 import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import Globe from './pages/Globe'
 import Country from './pages/Country'
 import Markets from './pages/Markets'
 import Compare from './pages/Compare'
 import Analyst from './pages/Analyst'
-import { api } from './api'
+import Scenario from './pages/Scenario'
+import Dashboard from './pages/Dashboard'
+import { api, streamAnalyst } from './api'
 
 const TIER_COLORS = { low: '#4ade80', elevated: '#fbbf24', high: '#fb923c', severe: '#f87171' }
+
+function DataFreshness() {
+  const [status, setStatus] = useState(null)
+
+  useEffect(() => {
+    const load = () => api.ingestStatus().then(setStatus).catch(() => {})
+    load()
+    const t = setInterval(load, 60000)
+    return () => clearInterval(t)
+  }, [])
+
+  if (!status) return null
+  const lastRan = status.last_ran ? new Date(status.last_ran) : null
+  const diffMin = lastRan ? Math.floor((Date.now() - lastRan.getTime()) / 60000) : null
+  const label = diffMin === null ? 'LIVE' : diffMin < 2 ? 'LIVE' : diffMin < 60 ? `${diffMin}m ago` : `${Math.floor(diffMin/60)}h ago`
+  const isLive = diffMin === null || diffMin < 5
+  return (
+    <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md"
+         style={{ background: isLive ? 'rgba(74,222,128,0.08)' : 'rgba(251,191,36,0.08)', border: `1px solid ${isLive ? 'rgba(74,222,128,0.15)' : 'rgba(251,191,36,0.15)'}` }}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: isLive ? '#4ade80' : '#fbbf24', boxShadow: `0 0 6px ${isLive ? 'rgba(74,222,128,0.8)' : 'rgba(251,191,36,0.8)'}` }} />
+      <span className="text-xs font-mono" style={{ color: isLive ? '#4ade80' : '#fbbf24' }}>{label}</span>
+    </div>
+  )
+}
+
+function FloatingAnalyst() {
+  const [open, setOpen] = useState(false)
+  const [messages, setMessages] = useState([])
+  const [input, setInput] = useState('')
+  const [streaming, setStreaming] = useState(false)
+  const location = useLocation()
+  const bottomRef = useRef(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const send = useCallback(async (text) => {
+    if (!text.trim() || streaming) return
+    const userMsg = { role: 'user', content: text.trim() }
+    setMessages(prev => [...prev, userMsg])
+    setInput('')
+    setStreaming(true)
+    const history = messages.map(m => ({ role: m.role, content: m.content }))
+    let acc = ''
+    setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+    try {
+      await streamAnalyst(
+        text.trim(), history, null,
+        chunk => { acc += chunk; setMessages(prev => { const copy = [...prev]; copy[copy.length - 1] = { role: 'assistant', content: acc }; return copy }) },
+        () => setStreaming(false)
+      )
+    } catch { setStreaming(false) }
+  }, [messages, streaming])
+
+  if (location.pathname === '/analyst') return null
+
+  const SUGGESTED = ['What are the top 3 geopolitical risks right now?', 'Which emerging markets look most vulnerable?', 'Explain the contagion risk from Russia']
+
+  return (
+    <>
+      {/* Floating button */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-2xl transition-transform hover:scale-105"
+        style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)', boxShadow: '0 4px 24px rgba(99,102,241,0.5)' }}
+        title="Open Analyst"
+      >
+        {open ? (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        )}
+      </button>
+
+      {/* Panel */}
+      {open && (
+        <div
+          className="fixed bottom-20 right-6 z-50 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+          style={{ width: '360px', height: '480px', background: 'rgba(10,10,20,0.97)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
+        >
+          {/* Header */}
+          <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+            <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <span className="text-sm font-semibold text-slate-200">Sovereign Analyst</span>
+            <span className="ml-auto text-xs text-slate-600 font-mono">AI</span>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-2">
+            {messages.length === 0 && (
+              <div className="flex flex-col gap-2 mt-2">
+                <p className="text-xs text-slate-600 px-1 mb-1">Suggested queries</p>
+                {SUGGESTED.map(q => (
+                  <button key={q} onClick={() => send(q)}
+                    className="text-left text-xs px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 transition-colors"
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className="max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed"
+                     style={m.role === 'user'
+                       ? { background: 'rgba(99,102,241,0.2)', color: '#c4b5fd', border: '1px solid rgba(99,102,241,0.3)' }
+                       : { background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  {m.content || (streaming && i === messages.length - 1 ? <span className="animate-pulse">▋</span> : '')}
+                </div>
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input */}
+          <div className="px-3 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+            <div className="flex gap-2">
+              <input
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
+                placeholder="Ask about geopolitical risk..."
+                disabled={streaming}
+                className="flex-1 text-xs px-3 py-2 rounded-lg text-slate-300 placeholder-slate-600 outline-none"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+              />
+              <button
+                onClick={() => send(input)}
+                disabled={streaming || !input.trim()}
+                className="px-3 py-2 rounded-lg text-xs font-medium transition-opacity disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)', color: 'white' }}
+              >
+                {streaming ? '…' : '→'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
 
 function SearchBar() {
   const [query, setQuery] = useState('')
@@ -177,18 +323,15 @@ function Nav() {
         {navItem('/', 'Globe', true)}
         <AlertBadge />
       </div>
+      {navItem('/dashboard', 'Dashboard')}
       {navItem('/markets', 'Markets')}
       {navItem('/compare', 'Compare')}
       {navItem('/analyst', 'Analyst')}
+      {navItem('/scenario', 'Scenario')}
 
       {/* Right side */}
       <div className="ml-auto flex items-center gap-3">
-        {/* Live indicator */}
-        <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md"
-             style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.15)' }}>
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400" style={{ boxShadow: '0 0 6px rgba(74,222,128,0.8)' }} />
-          <span className="text-xs text-green-400 font-mono">LIVE</span>
-        </div>
+        <DataFreshness />
         <SearchBar />
       </div>
     </nav>
@@ -199,6 +342,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Nav />
+      <FloatingAnalyst />
       <div style={{ paddingTop: '48px', minHeight: '100vh' }}>
         <Routes>
           <Route path="/" element={<Globe />} />
@@ -206,6 +350,8 @@ export default function App() {
           <Route path="/markets" element={<Markets />} />
           <Route path="/compare" element={<Compare />} />
           <Route path="/analyst" element={<Analyst />} />
+          <Route path="/scenario" element={<Scenario />} />
+          <Route path="/dashboard" element={<Dashboard />} />
         </Routes>
       </div>
     </BrowserRouter>

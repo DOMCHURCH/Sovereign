@@ -20,8 +20,6 @@ from analyst import stream_analyst
 
 DIST = pathlib.Path(__file__).parent / "dist"
 
-
-
 app = FastAPI(title="Sovereign API", version="1.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
 app.add_middleware(
@@ -31,6 +29,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Auto-trigger ingest on startup if data is stale (>6 hours old)
+@app.on_event("startup")
+async def _startup_ingest():
+    import asyncio
+    async def _delayed():
+        await asyncio.sleep(5)  # let server finish starting first
+        try:
+            conn = get_conn()
+            row = conn.execute(
+                "SELECT MAX(ran_at) FROM ingest_log WHERE source = 'world_bank' AND status = 'ok'"
+            ).fetchone()
+            last_run = row[0] if row and row[0] else None
+            if last_run is None or (datetime.now(timezone.utc) - last_run).total_seconds() > 21600:
+                import threading
+                def _run():
+                    try:
+                        from ingest import world_bank, sanctions, markets, news
+                        from analytics import country_risk, contagion, portfolio_impact, alerts, gti
+                        world_bank.run(); sanctions.run(); markets.run(); news.run()
+                        country_risk.run(); contagion.run(); portfolio_impact.run()
+                        alerts.run(); gti.run()
+                        _conflict_cache["data"] = None; _conflict_cache["ts"] = 0
+                    except Exception:
+                        pass
+                threading.Thread(target=_run, daemon=True).start()
+        except Exception:
+            pass
+    asyncio.create_task(_delayed())
 
 # All API routes live under /api
 router = APIRouter(prefix="/api")
@@ -85,6 +112,12 @@ class AnalystRequest(BaseModel):
 
 class StressRequest(BaseModel):
     country: str
+    shock_magnitude: float
+
+
+class ScenarioRequest(BaseModel):
+    country: str
+    shock_type: str
     shock_magnitude: float
 
 
@@ -713,6 +746,127 @@ def stress_test(req: StressRequest):
         "total_shock_pct": impact.total_shock_pct,
         "total_shock_usd": impact.total_shock_usd,
         "position_attribution": [{"ticker": p.ticker, "weight": p.weight, "shock_contribution_pct": p.shock_contribution_pct} for p in impact.position_attribution],
+    }
+
+
+@router.post("/scenario")
+def run_scenario(req: ScenarioRequest):
+    """Full scenario simulation: portfolio stress + contagion propagation."""
+    iso3 = req.country.upper()
+    shock = float(req.shock_magnitude)
+
+    # Portfolio stress
+    impact = estimate_portfolio_impact({iso3: shock})
+
+    # Contagion propagation
+    conn = get_conn()
+    countries = hydrate_countries(conn)
+    import pandas as pd
+    from analytics.contagion import propagate_shock, build_contagion_graph
+    corr_rows = conn.execute(
+        "SELECT country_a, country_b, correlation_30d FROM correlations WHERE date = (SELECT MAX(date) FROM correlations)"
+    ).fetchall()
+    correlations = pd.DataFrame(corr_rows, columns=["country_a", "country_b", "correlation_30d"])
+    G = build_contagion_graph(countries, correlations)
+    propagated = propagate_shock(G, iso3, shock)
+
+    # Enrich propagated with country names
+    top_contagion = [
+        {
+            "iso3": k,
+            "name": COUNTRY_METADATA.get(k, (k, ""))[0],
+            "estimated_risk_increase": round(v, 2),
+        }
+        for k, v in sorted(propagated.items(), key=lambda x: x[1], reverse=True)[:15]
+    ]
+
+    return {
+        "scenario": {
+            "country": iso3,
+            "country_name": COUNTRY_METADATA.get(iso3, (iso3, ""))[0],
+            "shock_type": req.shock_type,
+            "shock_magnitude": shock,
+        },
+        "portfolio": {
+            "total_shock_pct": impact.total_shock_pct,
+            "total_shock_usd": impact.total_shock_usd,
+            "position_attribution": [
+                {
+                    "ticker": p.ticker,
+                    "weight": p.weight,
+                    "shock_contribution_pct": p.shock_contribution_pct,
+                }
+                for p in impact.position_attribution
+            ],
+        },
+        "contagion": {
+            "epicenter": iso3,
+            "countries_at_risk": len(top_contagion),
+            "propagated": top_contagion,
+        },
+    }
+
+
+@router.get("/dashboard")
+def get_dashboard():
+    """Single endpoint returning all data needed for the Dashboard page."""
+    conn = get_conn()
+
+    # Risk scores
+    risk_rows = conn.execute(
+        """
+        SELECT sr.country_iso3, sr.score, sr.tier,
+               CAST(json_extract(sr.sub_scores_json, '$.delta_7d') AS DOUBLE) as delta
+        FROM sovereign_risk sr
+        INNER JOIN (SELECT country_iso3, MAX(computed_at) max_at FROM sovereign_risk GROUP BY country_iso3) l
+            ON sr.country_iso3 = l.country_iso3 AND sr.computed_at = l.max_at
+        ORDER BY sr.score DESC LIMIT 15
+        """
+    ).fetchall()
+
+    # Alerts
+    alert_rows = conn.execute(
+        """SELECT id, country_iso3, severity, trigger, message, created_at, acknowledged
+           FROM alerts ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END,
+           created_at DESC LIMIT 20"""
+    ).fetchall()
+
+    # GTI
+    try:
+        gti_rows = conn.execute(
+            "SELECT country_iso3, gti, tier, components_json FROM gti_scores ORDER BY gti DESC LIMIT 10"
+        ).fetchall()
+        gti = [{"iso3": r[0], "name": COUNTRY_METADATA.get(r[0], (r[0],""))[0],
+                "gti": r[1], "tier": r[2]} for r in gti_rows]
+    except Exception:
+        gti = []
+
+    # Portfolio impact
+    risk_deltas = {r[0]: r[3] for r in risk_rows if r[3] is not None}
+    impact = estimate_portfolio_impact(risk_deltas)
+
+    # Last ingest time
+    try:
+        last_row = conn.execute(
+            "SELECT MAX(ran_at) FROM ingest_log WHERE status = 'ok'"
+        ).fetchone()
+        last_updated = last_row[0].isoformat() if last_row and last_row[0] else None
+    except Exception:
+        last_updated = None
+
+    return {
+        "top_countries": [
+            {"iso3": r[0], "name": COUNTRY_METADATA.get(r[0], (r[0],""))[0],
+             "score": r[1], "tier": r[2], "delta": r[3]} for r in risk_rows
+        ],
+        "alerts": [
+            {"id": r[0], "country_iso3": r[1], "severity": r[2], "trigger": r[3],
+             "message": r[4], "created_at": str(r[5]), "acknowledged": bool(r[6])}
+            for r in alert_rows
+        ],
+        "gti": gti,
+        "portfolio_impact_pct": impact.total_shock_pct,
+        "last_updated": last_updated,
     }
 
 
