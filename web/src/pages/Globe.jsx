@@ -56,6 +56,12 @@ const CAPITALS = {
   UKR:{lat:50.4,lng:30.5}, USA:{lat:38.9,lng:-77.0}, UZB:{lat:41.3,lng:69.3},
   VEN:{lat:10.5,lng:-66.9}, VNM:{lat:21.0,lng:105.8}, YEM:{lat:15.4,lng:44.2},
   ZAF:{lat:-25.7,lng:28.2}, ZWE:{lat:-17.8,lng:31.1},
+  RWA:{lat:-1.9,lng:30.1},  SSD:{lat:4.9,lng:31.6},   COD:{lat:-4.3,lng:15.3},
+  HTI:{lat:18.5,lng:-72.3}, MLI:{lat:12.6,lng:-8.0},  NER:{lat:13.5,lng:2.1},
+  SOM:{lat:2.0,lng:45.3},   MOZ:{lat:-25.9,lng:32.6}, COL:{lat:4.7,lng:-74.1},
+  SDN:{lat:15.6,lng:32.5},  MMR:{lat:19.7,lng:96.1},  ETH:{lat:9.0,lng:38.7},
+  BFA:{lat:12.4,lng:-1.5},  NGA:{lat:9.1,lng:7.2},    AFG:{lat:34.5,lng:69.2},
+  ARM:{lat:40.2,lng:44.5},  AZE:{lat:40.4,lng:49.9},  LBN:{lat:33.9,lng:35.5},
 }
 
 function hexToRgba(hex, alpha) {
@@ -86,9 +92,31 @@ function getIso3(feat) {
   return (iso && iso !== '-99') ? iso : (feat?.properties?.ADM0_A3 || null)
 }
 
-const CONFLICT_COLORS = { major: '#ff4444', significant: '#ff8c00', minor: '#ffd700' }
+// Point colors & sizes by conflict category (not intensity)
+const CAT_COLORS = {
+  interstate_war:      '#ef4444',  // red
+  terrorist_insurgency:'#f97316',  // orange
+  civil_war:           '#a855f7',  // purple
+  territorial_dispute: '#fbbf24',  // amber
+  gang_crisis:         '#ec4899',  // pink
+}
+const CAT_LABELS = {
+  interstate_war:      'Interstate War',
+  terrorist_insurgency:'Terrorist / Insurgency',
+  civil_war:           'Civil War',
+  territorial_dispute: 'Territorial Dispute',
+  gang_crisis:         'Gang / Crime Crisis',
+}
+
 const CONFLICT_ALT    = { major: 0.07, significant: 0.045, minor: 0.025 }
 const CONFLICT_RADIUS = { major: 0.55, significant: 0.38, minor: 0.22 }
+
+// Arc colors for interstate wars: [startColor, endColor]
+const ARC_COLORS = {
+  major:       ['rgba(239,68,68,0.9)',  'rgba(239,68,68,0.4)'],
+  significant: ['rgba(249,115,22,0.8)', 'rgba(249,115,22,0.3)'],
+  minor:       ['rgba(251,191,36,0.7)', 'rgba(251,191,36,0.2)'],
+}
 
 // Cache GeoJSON at module level so it survives navigation (no CDN round-trip on remount)
 let _geoCache = null
@@ -251,13 +279,13 @@ export default function Globe() {
     api.conflictsSource().then(d => setConflictSource(d.source)).catch(() => {})
   }, [])
 
-  const conflictColor  = useCallback(d => CONFLICT_COLORS[d.intensity] || '#ffd700', [])
+  const conflictColor  = useCallback(d => CAT_COLORS[d.category] || '#ffd700', [])
   const conflictAlt    = useCallback(d => CONFLICT_ALT[d.intensity]    || 0.03, [])
   const conflictRadius = useCallback(d => CONFLICT_RADIUS[d.intensity] || 0.3, [])
 
   const conflictLabel = useCallback(d => {
-    const color = CONFLICT_COLORS[d.intensity] || '#ffd700'
-    const typeLabel = { interstate: 'Interstate War', civil_war: 'Civil War', insurgency: 'Insurgency', territorial: 'Territorial Dispute' }[d.type] || d.type
+    const color = CAT_COLORS[d.category] || '#ffd700'
+    const catLabel = CAT_LABELS[d.category] || d.category || d.type
     return `<div style="background:rgba(10,8,18,0.97);border:1px solid ${color}55;border-radius:9px;padding:11px 14px;font-family:monospace;min-width:200px;max-width:260px;box-shadow:0 4px 24px rgba(0,0,0,0.6)">
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
         <span style="width:8px;height:8px;border-radius:50%;background:${color};box-shadow:0 0 8px ${color};flex-shrink:0"></span>
@@ -265,13 +293,32 @@ export default function Globe() {
       </div>
       <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
         <span style="font-size:10px;padding:2px 7px;border-radius:4px;background:${color}22;color:${color};border:1px solid ${color}44;text-transform:uppercase;letter-spacing:0.05em">${d.intensity}</span>
-        <span style="font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(255,255,255,0.06);color:#94a3b8;border:1px solid rgba(255,255,255,0.1)">${typeLabel}</span>
+        <span style="font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(255,255,255,0.06);color:#94a3b8;border:1px solid rgba(255,255,255,0.1)">${catLabel}</span>
       </div>
       <div style="color:#94a3b8;font-size:11px;margin-bottom:4px">⚔️ ${d.parties}</div>
       <div style="color:#64748b;font-size:10px;line-height:1.5">${d.description}</div>
       <div style="color:#475569;font-size:10px;margin-top:5px">Since ${d.since}</div>
     </div>`
   }, [])
+
+  // Interstate wars → animated arc lines between attacker and defender capitals
+  const arcsData = useMemo(() => {
+    if (!showConflicts) return []
+    return conflicts
+      .filter(d => d.category === 'interstate_war' && d.attacker_iso3 && d.defender_iso3
+        && CAPITALS[d.attacker_iso3] && CAPITALS[d.defender_iso3]
+        && d.attacker_iso3 !== d.defender_iso3)
+      .map(d => ({
+        ...d,
+        startLat: CAPITALS[d.attacker_iso3].lat,
+        startLng: CAPITALS[d.attacker_iso3].lng,
+        endLat:   CAPITALS[d.defender_iso3].lat,
+        endLng:   CAPITALS[d.defender_iso3].lng,
+      }))
+  }, [conflicts, showConflicts])
+
+  const arcColor    = useCallback(d => ARC_COLORS[d.intensity] || ARC_COLORS.minor, [])
+  const arcLabel    = useCallback(d => conflictLabel(d), [conflictLabel])
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: '#070710' }}>
@@ -303,7 +350,20 @@ export default function Globe() {
           pointAltitude={conflictAlt}
           pointRadius={conflictRadius}
           pointLabel={conflictLabel}
+          pointsMerge={false}
           pointsTransitionDuration={400}
+          arcsData={arcsData}
+          arcStartLat="startLat"
+          arcStartLng="startLng"
+          arcEndLat="endLat"
+          arcEndLng="endLng"
+          arcColor={arcColor}
+          arcAltitude={0.18}
+          arcStroke={0.6}
+          arcDashLength={0.4}
+          arcDashGap={0.2}
+          arcDashAnimateTime={2200}
+          arcLabel={arcLabel}
           ringsData={ringsData}
           ringColor={r => r.tier === 'severe' ? '#ef444488' : '#f9731666'}
           ringMaxRadius={r => r.tier === 'severe' ? 4 : 3}
@@ -414,6 +474,7 @@ export default function Globe() {
 
         {/* Legend + conflict toggle */}
         <div className="px-4 py-3 border-t space-y-2.5" style={{ borderColor: '#1e1e2e' }}>
+          {/* Risk tier legend */}
           <div className="flex items-center gap-3 text-xs font-mono flex-wrap">
             {[['low', TIER_COLORS.low], ['elevated', TIER_COLORS.elevated], ['high', TIER_COLORS.high], ['severe', TIER_COLORS.severe]].map(([t, c]) => (
               <span key={t} className="flex items-center gap-1">
@@ -422,12 +483,12 @@ export default function Globe() {
               </span>
             ))}
           </div>
+
           {/* Conflict zones toggle */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-mono">
-                <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: '#ff4444', boxShadow: '0 0 5px #ff4444' }} />
-                <span className="text-slate-400">Conflict zones</span>
+                <span className="text-slate-400 font-semibold">Conflicts</span>
                 {conflicts.length > 0 && <span className="text-slate-600">({conflicts.length})</span>}
               </div>
               <div className="flex items-center gap-1">
@@ -443,15 +504,39 @@ export default function Globe() {
                   onClick={() => setShowConflicts(v => !v)}
                   className="text-xs font-mono px-2 py-0.5 rounded transition-all"
                   style={{
-                    background: showConflicts ? 'rgba(255,68,68,0.15)' : 'rgba(255,255,255,0.04)',
-                    color: showConflicts ? '#ff6666' : '#475569',
-                    border: `1px solid ${showConflicts ? 'rgba(255,68,68,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                    background: showConflicts ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.04)',
+                    color: showConflicts ? '#f87171' : '#475569',
+                    border: `1px solid ${showConflicts ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.08)'}`,
                   }}
                 >
                   {showConflicts ? 'ON' : 'OFF'}
                 </button>
               </div>
             </div>
+
+            {/* Category legend */}
+            {showConflicts && (
+              <div className="space-y-1 pl-0.5">
+                {Object.entries(CAT_LABELS).map(([cat, label]) => {
+                  const color = CAT_COLORS[cat]
+                  const isArc = cat === 'interstate_war'
+                  const count = conflicts.filter(c => c.category === cat).length
+                  if (!count) return null
+                  return (
+                    <div key={cat} className="flex items-center gap-2 text-xs font-mono">
+                      {isArc ? (
+                        <span style={{ width: 14, height: 2, background: `linear-gradient(90deg, ${color}, transparent)`, display: 'inline-block', borderRadius: 1, flexShrink: 0 }} />
+                      ) : (
+                        <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: color, boxShadow: `0 0 4px ${color}88` }} />
+                      )}
+                      <span className="text-slate-500 truncate">{label}</span>
+                      <span className="text-slate-700 ml-auto shrink-0">{count}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
             {/* Data source badge */}
             <div className="flex items-center gap-1.5">
               <span
