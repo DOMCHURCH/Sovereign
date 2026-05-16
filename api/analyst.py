@@ -4,7 +4,8 @@ import requests
 from typing import AsyncGenerator
 from db import get_conn
 
-MODEL = "claude-3-5-haiku-20241022"
+CEREBRAS_MODEL  = "llama3.1-8b"
+ANTHROPIC_MODEL = "claude-3-5-haiku-20241022"
 BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 
 SYSTEM_PROMPT_TEMPLATE = """You are Sovereign, an institutional geopolitical risk analyst with live access to sovereign risk scores, conflict intelligence, contagion models, and portfolio impact estimates for 50+ countries.
@@ -126,9 +127,6 @@ async def stream_analyst(
     history: list[dict],
     country_context: str | None = None,
 ) -> AsyncGenerator[str, None]:
-    import anthropic
-
-    client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     system = _build_system_prompt(message, country_context)
 
     messages = []
@@ -136,11 +134,38 @@ async def stream_analyst(
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": message})
 
-    async with client.messages.stream(
-        model=MODEL,
-        max_tokens=1024,
-        system=system,
-        messages=messages,
-    ) as stream:
-        async for text in stream.text_stream:
-            yield text
+    cerebras_key  = os.getenv("CEREBRAS_API_KEY", "")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+    if cerebras_key:
+        # Primary: Cerebras (free tier, fast Llama 3.1 8B)
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(
+            api_key=cerebras_key,
+            base_url="https://api.cerebras.ai/v1",
+        )
+        stream = await client.chat.completions.create(
+            model=CEREBRAS_MODEL,
+            max_tokens=1024,
+            messages=[{"role": "system", "content": system}] + messages,
+            stream=True,
+        )
+        async for chunk in stream:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    elif anthropic_key:
+        # Fallback: Anthropic claude-3-5-haiku (paid)
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=anthropic_key)
+        async with client.messages.stream(
+            model=ANTHROPIC_MODEL,
+            max_tokens=1024,
+            system=system,
+            messages=messages,
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
+
+    else:
+        yield "No AI API key configured. Set CEREBRAS_API_KEY (free) or ANTHROPIC_API_KEY in your environment."
