@@ -106,7 +106,7 @@ const CAT_LABELS = {
   gang_crisis:         'Gang / Crime Crisis',
 }
 
-const CONFLICT_ALT    = { major: 0.14, significant: 0.09, minor: 0.055 }
+const CONFLICT_ALT    = { major: 0.06, significant: 0.04, minor: 0.025 }
 const CONFLICT_RADIUS = { major: 1.4,  significant: 0.95, minor: 0.6  }
 
 // Arc colors for interstate wars: [startColor, endColor]
@@ -273,6 +273,18 @@ export default function Globe() {
     if (iso3) navigate(`/country/${iso3}`)
   }, [navigate])
 
+  // Clicking a conflict spike navigates to the primary country involved
+  const handlePointClick = useCallback((d) => {
+    const iso3 = d.defender_iso3 || d.attacker_iso3 || d.countries?.[0]
+    if (iso3) navigate(`/country/${iso3}`)
+  }, [navigate])
+
+  // Clicking an arc navigates to the defender country
+  const handleArcClick = useCallback((d) => {
+    const iso3 = d.defender_iso3 || d.attacker_iso3 || d.countries?.[0]
+    if (iso3) navigate(`/country/${iso3}`)
+  }, [navigate])
+
   const handleHover = useCallback((feat) => {
     setHovered(feat || null)
     const controls = globeRef.current?.controls()
@@ -419,6 +431,7 @@ export default function Globe() {
           pointAltitude={conflictAlt}
           pointRadius={conflictRadius}
           pointLabel={conflictLabel}
+          onPointClick={handlePointClick}
           pointsMerge={false}
           pointsTransitionDuration={400}
           arcsData={arcsData}
@@ -427,8 +440,9 @@ export default function Globe() {
           arcEndLat="endLat"
           arcEndLng="endLng"
           arcColor={arcColor}
-          arcAltitude={0.22}
+          arcAltitude={0.18}
           arcStroke={1.4}
+          onArcClick={handleArcClick}
           arcDashLength={0.5}
           arcDashGap={0.15}
           arcDashAnimateTime={1600}
