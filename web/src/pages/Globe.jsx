@@ -138,6 +138,82 @@ const FALLBACK_CONFLICTS = [
   {id:"westbank",name:"West Bank Violence",lat:31.9,lng:35.2,intensity:"significant",category:"territorial_dispute",parties:"Israeli forces vs. militants",since:2022,description:"Raids, settler violence, militant attacks.",countries:["ISR"]},
 ]
 
+// Fallback country risk data — shown when the backend API is unreachable.
+// Scores are curated estimates; live API values override these on connection.
+const FALLBACK_COUNTRIES = [
+  // Severe
+  {iso3:"SYR",name:"Syria",region:"Middle East",sovereign_risk_score:91,risk_tier:"severe",risk_delta_7d:0.4,top_risk_drivers:["civil war","sanctions exposure","governance deficit"],is_primary_sanctions_target:true},
+  {iso3:"SDN",name:"Sudan",region:"Africa",sovereign_risk_score:89,risk_tier:"severe",risk_delta_7d:1.2,top_risk_drivers:["civil war","macro stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"YEM",name:"Yemen",region:"Middle East",sovereign_risk_score:88,risk_tier:"severe",risk_delta_7d:0.1,top_risk_drivers:["military conflict","macro stress","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"AFG",name:"Afghanistan",region:"Asia",sovereign_risk_score:87,risk_tier:"severe",risk_delta_7d:-0.2,top_risk_drivers:["political instability","sanctions exposure","governance deficit"],is_primary_sanctions_target:true},
+  {iso3:"SOM",name:"Somalia",region:"Africa",sovereign_risk_score:86,risk_tier:"severe",risk_delta_7d:0.3,top_risk_drivers:["terrorism","governance deficit","macro stress"],is_primary_sanctions_target:false},
+  {iso3:"PRK",name:"North Korea",region:"Asia",sovereign_risk_score:85,risk_tier:"severe",risk_delta_7d:0.5,top_risk_drivers:["sanctions exposure","political instability","governance deficit"],is_primary_sanctions_target:true},
+  {iso3:"MMR",name:"Myanmar",region:"Asia",sovereign_risk_score:84,risk_tier:"severe",risk_delta_7d:0.8,top_risk_drivers:["civil war","political instability","sanctions exposure"],is_primary_sanctions_target:true},
+  {iso3:"HTI",name:"Haiti",region:"Americas",sovereign_risk_score:83,risk_tier:"severe",risk_delta_7d:1.5,top_risk_drivers:["gang crisis","governance deficit","macro stress"],is_primary_sanctions_target:false},
+  {iso3:"SSD",name:"South Sudan",region:"Africa",sovereign_risk_score:81,risk_tier:"severe",risk_delta_7d:0.2,top_risk_drivers:["political instability","civil war","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"CAF",name:"Central African Republic",region:"Africa",sovereign_risk_score:80,risk_tier:"severe",risk_delta_7d:0.0,top_risk_drivers:["civil war","governance deficit","macro stress"],is_primary_sanctions_target:false},
+  {iso3:"LBY",name:"Libya",region:"Africa",sovereign_risk_score:78,risk_tier:"severe",risk_delta_7d:-0.3,top_risk_drivers:["political instability","civil war","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"MLI",name:"Mali",region:"Africa",sovereign_risk_score:77,risk_tier:"severe",risk_delta_7d:0.6,top_risk_drivers:["terrorism","political instability","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"BFA",name:"Burkina Faso",region:"Africa",sovereign_risk_score:76,risk_tier:"severe",risk_delta_7d:0.9,top_risk_drivers:["terrorism","political instability","governance deficit"],is_primary_sanctions_target:false},
+  // High
+  {iso3:"UKR",name:"Ukraine",region:"Europe",sovereign_risk_score:74,risk_tier:"high",risk_delta_7d:0.3,top_risk_drivers:["military conflict","macro stress","market stress"],is_primary_sanctions_target:false},
+  {iso3:"IRN",name:"Iran",region:"Middle East",sovereign_risk_score:73,risk_tier:"high",risk_delta_7d:0.4,top_risk_drivers:["sanctions exposure","political instability","governance deficit"],is_primary_sanctions_target:true},
+  {iso3:"RUS",name:"Russia",region:"Europe",sovereign_risk_score:71,risk_tier:"high",risk_delta_7d:0.2,top_risk_drivers:["sanctions exposure","market stress","political instability"],is_primary_sanctions_target:true},
+  {iso3:"NER",name:"Niger",region:"Africa",sovereign_risk_score:70,risk_tier:"high",risk_delta_7d:0.7,top_risk_drivers:["political instability","terrorism","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"COD",name:"DR Congo",region:"Africa",sovereign_risk_score:69,risk_tier:"high",risk_delta_7d:1.1,top_risk_drivers:["civil war","governance deficit","macro stress"],is_primary_sanctions_target:false},
+  {iso3:"IRQ",name:"Iraq",region:"Middle East",sovereign_risk_score:67,risk_tier:"high",risk_delta_7d:0.1,top_risk_drivers:["terrorism","political instability","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"VEN",name:"Venezuela",region:"Americas",sovereign_risk_score:66,risk_tier:"high",risk_delta_7d:-0.2,top_risk_drivers:["macro stress","sanctions exposure","political instability"],is_primary_sanctions_target:true},
+  {iso3:"ETH",name:"Ethiopia",region:"Africa",sovereign_risk_score:65,risk_tier:"high",risk_delta_7d:0.5,top_risk_drivers:["civil war","macro stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"NGA",name:"Nigeria",region:"Africa",sovereign_risk_score:63,risk_tier:"high",risk_delta_7d:0.3,top_risk_drivers:["terrorism","macro stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"MOZ",name:"Mozambique",region:"Africa",sovereign_risk_score:62,risk_tier:"high",risk_delta_7d:0.4,top_risk_drivers:["terrorism","macro stress","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"PAK",name:"Pakistan",region:"Asia",sovereign_risk_score:61,risk_tier:"high",risk_delta_7d:0.2,top_risk_drivers:["terrorism","macro stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"LBN",name:"Lebanon",region:"Middle East",sovereign_risk_score:60,risk_tier:"high",risk_delta_7d:-0.1,top_risk_drivers:["macro stress","political instability","market stress"],is_primary_sanctions_target:false},
+  {iso3:"ZWE",name:"Zimbabwe",region:"Africa",sovereign_risk_score:58,risk_tier:"high",risk_delta_7d:0.0,top_risk_drivers:["macro stress","governance deficit","sanctions exposure"],is_primary_sanctions_target:false},
+  {iso3:"COL",name:"Colombia",region:"Americas",sovereign_risk_score:56,risk_tier:"high",risk_delta_7d:0.2,top_risk_drivers:["terrorism","political instability","macro stress"],is_primary_sanctions_target:false},
+  // Elevated
+  {iso3:"ISR",name:"Israel",region:"Middle East",sovereign_risk_score:54,risk_tier:"elevated",risk_delta_7d:0.8,top_risk_drivers:["military conflict","market stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"CHN",name:"China",region:"Asia",sovereign_risk_score:52,risk_tier:"elevated",risk_delta_7d:0.1,top_risk_drivers:["geopolitical tension","market stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"EGY",name:"Egypt",region:"Africa",sovereign_risk_score:51,risk_tier:"elevated",risk_delta_7d:0.2,top_risk_drivers:["macro stress","political instability","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"TUR",name:"Turkey",region:"Europe",sovereign_risk_score:50,risk_tier:"elevated",risk_delta_7d:0.3,top_risk_drivers:["macro stress","political instability","market stress"],is_primary_sanctions_target:false},
+  {iso3:"BLR",name:"Belarus",region:"Europe",sovereign_risk_score:49,risk_tier:"elevated",risk_delta_7d:0.1,top_risk_drivers:["sanctions exposure","political instability","governance deficit"],is_primary_sanctions_target:true},
+  {iso3:"BGD",name:"Bangladesh",region:"Asia",sovereign_risk_score:47,risk_tier:"elevated",risk_delta_7d:0.4,top_risk_drivers:["political instability","macro stress","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"KAZ",name:"Kazakhstan",region:"Asia",sovereign_risk_score:45,risk_tier:"elevated",risk_delta_7d:0.0,top_risk_drivers:["political instability","governance deficit","macro stress"],is_primary_sanctions_target:false},
+  {iso3:"MEX",name:"Mexico",region:"Americas",sovereign_risk_score:44,risk_tier:"elevated",risk_delta_7d:0.2,top_risk_drivers:["gang crisis","political instability","macro stress"],is_primary_sanctions_target:false},
+  {iso3:"ARG",name:"Argentina",region:"Americas",sovereign_risk_score:43,risk_tier:"elevated",risk_delta_7d:-0.3,top_risk_drivers:["macro stress","market stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"IND",name:"India",region:"Asia",sovereign_risk_score:42,risk_tier:"elevated",risk_delta_7d:0.1,top_risk_drivers:["geopolitical tension","political instability","macro stress"],is_primary_sanctions_target:false},
+  {iso3:"BRA",name:"Brazil",region:"Americas",sovereign_risk_score:41,risk_tier:"elevated",risk_delta_7d:0.0,top_risk_drivers:["macro stress","political instability","market stress"],is_primary_sanctions_target:false},
+  {iso3:"SAU",name:"Saudi Arabia",region:"Middle East",sovereign_risk_score:40,risk_tier:"elevated",risk_delta_7d:0.1,top_risk_drivers:["geopolitical tension","political instability","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"IDN",name:"Indonesia",region:"Asia",sovereign_risk_score:38,risk_tier:"elevated",risk_delta_7d:0.0,top_risk_drivers:["macro stress","political instability","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"MAR",name:"Morocco",region:"Africa",sovereign_risk_score:37,risk_tier:"elevated",risk_delta_7d:0.1,top_risk_drivers:["political instability","macro stress","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"THA",name:"Thailand",region:"Asia",sovereign_risk_score:36,risk_tier:"elevated",risk_delta_7d:0.0,top_risk_drivers:["political instability","macro stress","governance deficit"],is_primary_sanctions_target:false},
+  // Low
+  {iso3:"USA",name:"United States",region:"Americas",sovereign_risk_score:28,risk_tier:"low",risk_delta_7d:0.1,top_risk_drivers:["market stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"POL",name:"Poland",region:"Europe",sovereign_risk_score:25,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["geopolitical tension","macro stress"],is_primary_sanctions_target:false},
+  {iso3:"KOR",name:"South Korea",region:"Asia",sovereign_risk_score:24,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["geopolitical tension","market stress"],is_primary_sanctions_target:false},
+  {iso3:"FRA",name:"France",region:"Europe",sovereign_risk_score:22,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["political instability","macro stress"],is_primary_sanctions_target:false},
+  {iso3:"ESP",name:"Spain",region:"Europe",sovereign_risk_score:21,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"GBR",name:"United Kingdom",region:"Europe",sovereign_risk_score:20,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"ITA",name:"Italy",region:"Europe",sovereign_risk_score:20,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"CAN",name:"Canada",region:"Americas",sovereign_risk_score:14,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress"],is_primary_sanctions_target:false},
+  {iso3:"AUS",name:"Australia",region:"Asia",sovereign_risk_score:12,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress"],is_primary_sanctions_target:false},
+  {iso3:"DEU",name:"Germany",region:"Europe",sovereign_risk_score:18,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress","market stress"],is_primary_sanctions_target:false},
+  {iso3:"JPN",name:"Japan",region:"Asia",sovereign_risk_score:15,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress","geopolitical tension"],is_primary_sanctions_target:false},
+  {iso3:"NOR",name:"Norway",region:"Europe",sovereign_risk_score:8,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress"],is_primary_sanctions_target:false},
+  {iso3:"SWE",name:"Sweden",region:"Europe",sovereign_risk_score:9,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress"],is_primary_sanctions_target:false},
+  {iso3:"NLD",name:"Netherlands",region:"Europe",sovereign_risk_score:11,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress"],is_primary_sanctions_target:false},
+  {iso3:"SGP",name:"Singapore",region:"Asia",sovereign_risk_score:10,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["geopolitical tension"],is_primary_sanctions_target:false},
+  {iso3:"TWN",name:"Taiwan",region:"Asia",sovereign_risk_score:32,risk_tier:"low",risk_delta_7d:0.2,top_risk_drivers:["geopolitical tension","political instability"],is_primary_sanctions_target:false},
+  {iso3:"MYS",name:"Malaysia",region:"Asia",sovereign_risk_score:30,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"PHL",name:"Philippines",region:"Asia",sovereign_risk_score:35,risk_tier:"low",risk_delta_7d:0.1,top_risk_drivers:["terrorism","political instability"],is_primary_sanctions_target:false},
+  {iso3:"GHA",name:"Ghana",region:"Africa",sovereign_risk_score:34,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"KEN",name:"Kenya",region:"Africa",sovereign_risk_score:38,risk_tier:"elevated",risk_delta_7d:0.1,top_risk_drivers:["terrorism","macro stress","political instability"],is_primary_sanctions_target:false},
+  {iso3:"ZAF",name:"South Africa",region:"Africa",sovereign_risk_score:40,risk_tier:"elevated",risk_delta_7d:0.1,top_risk_drivers:["macro stress","political instability","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"TZA",name:"Tanzania",region:"Africa",sovereign_risk_score:33,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["macro stress","governance deficit"],is_primary_sanctions_target:false},
+  {iso3:"VNM",name:"Vietnam",region:"Asia",sovereign_risk_score:32,risk_tier:"low",risk_delta_7d:0.0,top_risk_drivers:["governance deficit","geopolitical tension"],is_primary_sanctions_target:false},
+  {iso3:"DZA",name:"Algeria",region:"Africa",sovereign_risk_score:45,risk_tier:"elevated",risk_delta_7d:0.0,top_risk_drivers:["political instability","governance deficit","macro stress"],is_primary_sanctions_target:false},
+  {iso3:"RWA",name:"Rwanda",region:"Africa",sovereign_risk_score:50,risk_tier:"elevated",risk_delta_7d:0.5,top_risk_drivers:["military conflict","governance deficit","political instability"],is_primary_sanctions_target:false},
+]
+
 // Cache GeoJSON at module level so it survives navigation (no CDN round-trip on remount)
 let _geoCache = null
 
@@ -162,7 +238,9 @@ export default function Globe() {
 
   // Data fetching
   useEffect(() => {
-    api.countries().then(d => { setCountries(d); setLastRefresh(new Date()) }).catch(() => {})
+    api.countries()
+      .then(d => { setCountries(d && d.length > 0 ? d : FALLBACK_COUNTRIES); setLastRefresh(new Date()) })
+      .catch(() => { setCountries(FALLBACK_COUNTRIES); setLastRefresh(new Date()) })
     api.alerts().then(setAlerts).catch(() => {})
     api.portfolioImpact().then(setImpact).catch(() => {})
     setConflictsLoading(true)
@@ -176,7 +254,7 @@ export default function Globe() {
     api.weather().then(setWeatherData).catch(() => {})
 
     const t = setInterval(() => {
-      api.countries().then(d => { setCountries(d); setLastRefresh(new Date()) }).catch(() => {})
+      api.countries().then(d => { setCountries(d && d.length > 0 ? d : FALLBACK_COUNTRIES); setLastRefresh(new Date()) }).catch(() => {})
       api.alerts().then(setAlerts).catch(() => {})
       api.portfolioImpact().then(setImpact).catch(() => {})
       api.gti().then(d => setGtiData(d.slice(0, 8))).catch(() => {})
