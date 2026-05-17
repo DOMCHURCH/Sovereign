@@ -152,6 +152,19 @@ def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
         )
     """)
 
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS weather_data (
+            country_iso3    VARCHAR PRIMARY KEY,
+            temp_c          DOUBLE,
+            weather_code    INTEGER,
+            weather_label   VARCHAR,
+            weather_emoji   VARCHAR,
+            wind_kmh        DOUBLE,
+            is_severe       BOOLEAN NOT NULL DEFAULT FALSE,
+            fetched_at      TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """)
+
 
 def log_ingest(source: str, status: str, rows: int = 0, error: str | None = None) -> None:
     conn = get_conn()

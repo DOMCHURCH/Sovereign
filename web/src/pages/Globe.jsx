@@ -58,10 +58,8 @@ const CAPITALS = {
   ZAF:{lat:-25.7,lng:28.2}, ZWE:{lat:-17.8,lng:31.1},
   RWA:{lat:-1.9,lng:30.1},  SSD:{lat:4.9,lng:31.6},   COD:{lat:-4.3,lng:15.3},
   HTI:{lat:18.5,lng:-72.3}, MLI:{lat:12.6,lng:-8.0},  NER:{lat:13.5,lng:2.1},
-  SOM:{lat:2.0,lng:45.3},   MOZ:{lat:-25.9,lng:32.6}, COL:{lat:4.7,lng:-74.1},
-  SDN:{lat:15.6,lng:32.5},  MMR:{lat:19.7,lng:96.1},  ETH:{lat:9.0,lng:38.7},
-  BFA:{lat:12.4,lng:-1.5},  NGA:{lat:9.1,lng:7.2},    AFG:{lat:34.5,lng:69.2},
-  ARM:{lat:40.2,lng:44.5},  AZE:{lat:40.4,lng:49.9},  LBN:{lat:33.9,lng:35.5},
+  SOM:{lat:2.0,lng:45.3},   MOZ:{lat:-25.9,lng:32.6}, BFA:{lat:12.4,lng:-1.5},
+  ARM:{lat:40.2,lng:44.5},
 }
 
 function hexToRgba(hex, alpha) {
@@ -135,6 +133,8 @@ export default function Globe() {
   const [conflictsLoading, setConflictsLoading] = useState(false)
   const [gtiData, setGtiData] = useState([])
   const [marketData, setMarketData] = useState(null)
+  const [weatherData, setWeatherData] = useState([])
+  const [showWeather, setShowWeather] = useState(true)
   const globeRef = useRef(null)
   const navigate = useNavigate()
 
@@ -149,6 +149,7 @@ export default function Globe() {
 
     api.gti().then(d => setGtiData(d.slice(0, 8))).catch(() => {})
     api.marketSnapshot().then(setMarketData).catch(() => {})
+    api.weather().then(setWeatherData).catch(() => {})
 
     const t = setInterval(() => {
       api.countries().then(d => { setCountries(d); setLastRefresh(new Date()) }).catch(() => {})
@@ -338,6 +339,18 @@ export default function Globe() {
   const arcColor    = useCallback(d => ARC_COLORS[d.intensity] || ARC_COLORS.minor, [])
   const arcLabel    = useCallback(d => conflictLabel(d), [conflictLabel])
 
+  const severeWeatherPoints = useMemo(() => {
+    if (!showWeather) return []
+    return weatherData
+      .filter(w => w.is_severe && CAPITALS[w.iso3])
+      .map(w => ({
+        ...w,
+        lat: CAPITALS[w.iso3].lat,
+        lng: CAPITALS[w.iso3].lng,
+        _type: 'weather',
+      }))
+  }, [weatherData, showWeather])
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: '#070710' }}>
       {/* Globe area */}
@@ -394,6 +407,19 @@ export default function Globe() {
           ringPropagationSpeed={r => r.kind === 'conflict' ? (r.tier === 'major' ? 4 : 2.5) : (r.tier === 'severe' ? 3 : 2)}
           ringRepeatPeriod={r => r.kind === 'conflict' ? (r.tier === 'major' ? 700 : 1100) : (r.tier === 'severe' ? 900 : 1400)}
           ringAltitude={0.01}
+          htmlElementsData={severeWeatherPoints}
+          htmlElement={d => {
+            const el = document.createElement('div')
+            el.innerHTML = d.weather_emoji || '⛈️'
+            el.style.fontSize = '20px'
+            el.style.filter = 'drop-shadow(0 0 6px rgba(251,191,36,0.9))'
+            el.style.pointerEvents = 'none'
+            el.style.userSelect = 'none'
+            return el
+          }}
+          htmlLat="lat"
+          htmlLng="lng"
+          htmlAltitude={0.02}
         />
 
         {/* Drag hint */}
@@ -410,6 +436,9 @@ export default function Globe() {
           {alertCounts.watch > 0 && <span className="text-indigo-400">👁 {alertCounts.watch} watch</span>}
           {!alertCounts.critical && !alertCounts.warning && !alertCounts.watch && (
             <span className="text-green-500">No active alerts</span>
+          )}
+          {severeWeatherPoints.length > 0 && (
+            <span className="text-amber-400">⛈️ {severeWeatherPoints.length} severe weather</span>
           )}
           <span className="ml-auto text-slate-500">
             PORTFOLIO EST:{' '}
