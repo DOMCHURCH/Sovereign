@@ -223,41 +223,80 @@ def get_country_history(iso3: str):
     return [{"score": r[0], "tier": r[1], "date": r[2].isoformat() if hasattr(r[2], "isoformat") else str(r[2])} for r in rows]
 
 
+def _get_newsapi_keys() -> list[str]:
+    """Return all configured NewsAPI keys. Supports:
+    - NEWS_API_KEYS=key1,key2,key3  (comma-separated, preferred)
+    - NEWS_API_KEY=key1              (single key, legacy)
+    - NEWS_API_KEY_1 / _2 / _3 ...  (numbered)
+    """
+    keys = []
+    multi = os.getenv("NEWS_API_KEYS", "")
+    if multi:
+        keys.extend(k.strip() for k in multi.split(",") if k.strip())
+    single = os.getenv("NEWS_API_KEY", "")
+    if single and single not in keys:
+        keys.append(single)
+    for i in range(1, 10):
+        k = os.getenv(f"NEWS_API_KEY_{i}", "")
+        if k and k not in keys:
+            keys.append(k)
+    return keys
+
+
+def _newsapi_fetch(params: dict) -> list[dict]:
+    """Try each NewsAPI key in order; skip keys that are rate-limited (429) or exhausted."""
+    import requests as req
+    keys = _get_newsapi_keys()
+    if not keys:
+        return []
+    for key in keys:
+        try:
+            resp = req.get(
+                "https://newsapi.org/v2/everything",
+                params={**params, "apiKey": key},
+                timeout=10,
+            )
+            if resp.status_code == 429:
+                continue  # rate-limited, try next key
+            if resp.status_code == 426:
+                continue  # plan limit hit
+            if not resp.ok:
+                continue
+            data = resp.json()
+            if data.get("status") == "error":
+                code = data.get("code", "")
+                if code in ("rateLimited", "maximumResultsReached", "apiKeyExhausted"):
+                    continue
+            articles = data.get("articles", [])
+            if articles:
+                return articles
+        except Exception:
+            continue
+    return []
+
+
 @router.get("/countries/{iso3}/news")
 def get_country_news(iso3: str):
     iso3 = iso3.upper()
     country_name = COUNTRY_METADATA.get(iso3, (iso3, ""))[0]
-    news_api_key = os.getenv("NEWS_API_KEY", "")
-    if not news_api_key:
-        return []
-    import requests as req
     from_date = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
-    try:
-        resp = req.get(
-            "https://newsapi.org/v2/everything",
-            params={
-                "q": f'"{country_name}" economy OR sanctions OR politics OR crisis',
-                "from": from_date,
-                "language": "en",
-                "sortBy": "relevancy",
-                "pageSize": 8,
-                "apiKey": news_api_key,
-            },
-            timeout=10,
-        )
-        articles = resp.json().get("articles", [])
-        return [
-            {
-                "title": a.get("title", ""),
-                "description": a.get("description", ""),
-                "url": a.get("url", ""),
-                "source": a.get("source", {}).get("name", ""),
-                "published_at": a.get("publishedAt", ""),
-            }
-            for a in articles if a.get("title")
-        ]
-    except Exception:
-        return []
+    articles = _newsapi_fetch({
+        "q": f'"{country_name}" economy OR sanctions OR politics OR crisis',
+        "from": from_date,
+        "language": "en",
+        "sortBy": "relevancy",
+        "pageSize": 8,
+    })
+    return [
+        {
+            "title": a.get("title", ""),
+            "description": a.get("description", ""),
+            "url": a.get("url", ""),
+            "source": a.get("source", {}).get("name", ""),
+            "published_at": a.get("publishedAt", ""),
+        }
+        for a in articles if a.get("title")
+    ]
 
 
 # ── Conflict zones ────────────────────────────────────────────────────────────
