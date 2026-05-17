@@ -1,12 +1,12 @@
 import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { useEffect, useRef, useState, useCallback } from 'react'
-import Globe from './pages/Globe'
-import Country from './pages/Country'
-import Markets from './pages/Markets'
-import Compare from './pages/Compare'
-import Analyst from './pages/Analyst'
-import Scenario from './pages/Scenario'
-import Dashboard from './pages/Dashboard'
+import { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react'
+const Globe = lazy(() => import('./pages/Globe'))
+const Country = lazy(() => import('./pages/Country'))
+const Markets = lazy(() => import('./pages/Markets'))
+const Compare = lazy(() => import('./pages/Compare'))
+const Analyst = lazy(() => import('./pages/Analyst'))
+const Scenario = lazy(() => import('./pages/Scenario'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
 import { api, streamAnalyst } from './api'
 
 const TIER_COLORS = { low: '#4ade80', elevated: '#fbbf24', high: '#fb923c', severe: '#f87171' }
@@ -344,15 +344,21 @@ export default function App() {
       <Nav />
       <FloatingAnalyst />
       <div style={{ paddingTop: '48px', minHeight: '100vh' }}>
-        <Routes>
-          <Route path="/" element={<Globe />} />
-          <Route path="/country/:iso3" element={<Country />} />
-          <Route path="/markets" element={<Markets />} />
-          <Route path="/compare" element={<Compare />} />
-          <Route path="/analyst" element={<Analyst />} />
-          <Route path="/scenario" element={<Scenario />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-        </Routes>
+        <Suspense fallback={
+          <div className="flex items-center justify-center h-screen" style={{ background: '#070710' }}>
+            <div className="text-slate-600 font-mono text-sm animate-pulse">Loading...</div>
+          </div>
+        }>
+          <Routes>
+            <Route path="/" element={<Globe />} />
+            <Route path="/country/:iso3" element={<Country />} />
+            <Route path="/markets" element={<Markets />} />
+            <Route path="/compare" element={<Compare />} />
+            <Route path="/analyst" element={<Analyst />} />
+            <Route path="/scenario" element={<Scenario />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+          </Routes>
+        </Suspense>
       </div>
     </BrowserRouter>
   )

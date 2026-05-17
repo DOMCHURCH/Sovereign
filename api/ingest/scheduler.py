@@ -18,16 +18,24 @@ def _run_news_and_gti():
 def _run_full():
     """Full refresh every 6 hours."""
     from ingest import world_bank, sanctions, markets, news
+    from ingest import weather as weather_ingest
     from analytics import country_risk, contagion, portfolio_impact, alerts, gti
     world_bank.run()
     sanctions.run()
     markets.run()
     news.run()
+    weather_ingest.run()
     country_risk.run()
     contagion.run()
     portfolio_impact.run()
     alerts.run()
     gti.run()
+
+
+def _run_weather():
+    """Weather refresh every 2 hours."""
+    from ingest import weather as weather_ingest
+    weather_ingest.run()
 
 
 def start_scheduler() -> BackgroundScheduler:
@@ -46,6 +54,13 @@ def start_scheduler() -> BackgroundScheduler:
         _run_full,
         CronTrigger(hour="*/6"),
         id="full_refresh",
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        _run_weather,
+        IntervalTrigger(hours=2),
+        id="weather",
         replace_existing=True,
     )
 

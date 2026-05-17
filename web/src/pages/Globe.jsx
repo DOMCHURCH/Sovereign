@@ -581,6 +581,22 @@ export default function Globe() {
             ))}
           </div>
 
+          {/* Weather toggle */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-mono text-slate-400 font-semibold">Weather</span>
+            <button
+              onClick={() => setShowWeather(w => !w)}
+              className="text-xs px-2 py-1 rounded font-mono transition-colors"
+              style={{
+                background: showWeather ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.04)',
+                border: `1px solid ${showWeather ? 'rgba(251,191,36,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                color: showWeather ? '#fbbf24' : '#64748b',
+              }}
+            >
+              ⛈️ Weather
+            </button>
+          </div>
+
           {/* Conflict zones toggle */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">

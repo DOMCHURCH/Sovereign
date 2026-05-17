@@ -38,6 +38,9 @@ export const api = {
   marketSnapshot: () => get('/market/snapshot'),
   dashboard: () => get('/dashboard'),
   runScenario: (country, shock_type, shock_magnitude) => post('/scenario', { country, shock_type, shock_magnitude }),
+  weather: () => get('/weather'),
+  countryWeather: (iso3) => get(`/countries/${iso3}/weather`),
+  countryReport: (iso3) => get(`/countries/${iso3}/report`),
 }
 
 export async function streamAnalyst(message, history, countryContext, onChunk, onDone) {

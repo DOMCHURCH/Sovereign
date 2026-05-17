@@ -47,8 +47,9 @@ async def _startup_ingest():
                 def _run():
                     try:
                         from ingest import world_bank, sanctions, markets, news
+                        from ingest import weather as weather_ingest
                         from analytics import country_risk, contagion, portfolio_impact, alerts, gti
-                        world_bank.run(); sanctions.run(); markets.run(); news.run()
+                        world_bank.run(); sanctions.run(); markets.run(); news.run(); weather_ingest.run()
                         country_risk.run(); contagion.run(); portfolio_impact.run()
                         alerts.run(); gti.run()
                         _conflict_cache["data"] = None; _conflict_cache["ts"] = 0
@@ -617,6 +618,104 @@ def _fetch_live_conflicts() -> list[dict]:
 def get_conflicts_source():
     """Returns which data source is currently powering the conflict layer."""
     return {"source": _conflict_cache.get("source", "curated"), "cached_at": _conflict_cache.get("ts", 0)}
+
+
+@router.get("/weather")
+def get_weather():
+    """Current weather conditions for all tracked countries."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """SELECT country_iso3, temp_c, weather_code, weather_label, weather_emoji,
+                      wind_kmh, is_severe, fetched_at
+               FROM weather_data ORDER BY is_severe DESC, country_iso3"""
+        ).fetchall()
+        if rows:
+            return [
+                {
+                    "iso3": r[0],
+                    "temp_c": r[1],
+                    "weather_code": r[2],
+                    "weather_label": r[3],
+                    "weather_emoji": r[4],
+                    "wind_kmh": r[5],
+                    "is_severe": bool(r[6]),
+                    "fetched_at": r[7].isoformat() if hasattr(r[7], "isoformat") else str(r[7]),
+                    "name": COUNTRY_METADATA.get(r[0], (r[0], ""))[0],
+                }
+                for r in rows
+            ]
+    except Exception:
+        pass
+    # Trigger a fresh fetch if table is empty
+    try:
+        from ingest.weather import run as weather_run
+        weather_run()
+        return get_weather()
+    except Exception:
+        return []
+
+
+@router.get("/countries/{iso3}/weather")
+def get_country_weather(iso3: str):
+    """Current weather for a single country."""
+    iso3 = iso3.upper()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """SELECT country_iso3, temp_c, weather_code, weather_label, weather_emoji,
+                      wind_kmh, is_severe, fetched_at
+               FROM weather_data WHERE country_iso3 = ?""",
+            [iso3],
+        ).fetchone()
+        if row:
+            return {
+                "iso3": row[0],
+                "temp_c": row[1],
+                "weather_code": row[2],
+                "weather_label": row[3],
+                "weather_emoji": row[4],
+                "wind_kmh": row[5],
+                "is_severe": bool(row[6]),
+                "fetched_at": row[7].isoformat() if hasattr(row[7], "isoformat") else str(row[7]),
+                "name": COUNTRY_METADATA.get(row[0], (row[0], ""))[0],
+            }
+    except Exception:
+        pass
+    return {}
+
+
+@router.get("/countries/{iso3}/report")
+def get_country_report(iso3: str):
+    """Full country risk report export — all data in one JSON payload."""
+    iso3 = iso3.upper()
+    conn = get_conn()
+    country_data = {}
+    try:
+        country_data["country"] = get_country(iso3)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Country not found")
+    try:
+        country_data["history"] = get_country_history(iso3)
+    except Exception:
+        country_data["history"] = []
+    try:
+        country_data["news"] = get_news_feed(iso3=iso3, limit=20)
+    except Exception:
+        country_data["news"] = []
+    try:
+        country_data["weather"] = get_country_weather(iso3)
+    except Exception:
+        country_data["weather"] = {}
+    try:
+        gti_row = conn.execute(
+            "SELECT gti, tier, components_json FROM gti_scores WHERE country_iso3 = ?", [iso3]
+        ).fetchone()
+        country_data["gti"] = {"gti": gti_row[0], "tier": gti_row[1], "components": json.loads(gti_row[2] or "{}")} if gti_row else {}
+    except Exception:
+        country_data["gti"] = {}
+    country_data["generated_at"] = datetime.now(timezone.utc).isoformat()
+    return country_data
 
 
 @router.get("/countries/{iso3}/contagion")

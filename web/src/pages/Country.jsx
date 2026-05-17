@@ -50,6 +50,7 @@ export default function Country() {
   const [aiLoading, setAiLoading] = useState(false)
   const [news, setNews] = useState([])
   const [newsLoading, setNewsLoading] = useState(false)
+  const [weatherData, setWeatherData] = useState(null)
 
   useEffect(() => {
     setLoading(true)
@@ -65,6 +66,7 @@ export default function Country() {
       setImpact(imp)
       setLoading(false)
     }).catch(() => setLoading(false))
+    api.countryWeather(iso3).then(d => { if (d && d.iso3) setWeatherData(d) }).catch(() => {})
   }, [iso3])
 
   useEffect(() => {
@@ -130,6 +132,19 @@ export default function Country() {
 
   const portfolioPos = impact?.position_attribution?.find(p => p.ticker === myTicker)
 
+  const downloadReport = async () => {
+    try {
+      const data = await api.countryReport(iso3)
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${iso3}-sovereign-report.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {}
+  }
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
       {/* Header */}
@@ -150,9 +165,18 @@ export default function Country() {
           </div>
           <p className="text-slate-500 text-sm mt-1">{country.region}</p>
         </div>
-        <div className="text-center">
-          <RiskGauge score={country.sovereign_risk_score} size={96} />
-          <div className="text-xs text-slate-500 mt-1">Risk Score / 100</div>
+        <div className="flex flex-col items-end gap-2">
+          <div className="text-center">
+            <RiskGauge score={country.sovereign_risk_score} size={96} />
+            <div className="text-xs text-slate-500 mt-1">Risk Score / 100</div>
+          </div>
+          <button
+            onClick={downloadReport}
+            className="text-xs px-3 py-1.5 rounded-lg font-mono transition-colors"
+            style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', color: '#818cf8' }}
+          >
+            ↓ Export Report
+          </button>
         </div>
       </div>
 
@@ -177,6 +201,31 @@ export default function Country() {
           {aiInsight || (aiLoading ? <span className="shimmer inline-block w-full h-4 rounded" /> : 'No analysis available.')}
         </p>
       </div>
+
+      {/* Weather Card */}
+      {weatherData && (
+        <div className="rounded-xl px-4 py-3 flex items-center gap-4"
+             style={{
+               background: weatherData.is_severe ? 'rgba(251,191,36,0.08)' : 'rgba(255,255,255,0.03)',
+               border: `1px solid ${weatherData.is_severe ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.07)'}`,
+             }}>
+          <span style={{ fontSize: '28px', lineHeight: 1 }}>{weatherData.weather_emoji}</span>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-slate-200">
+                {weatherData.temp_c != null ? `${weatherData.temp_c.toFixed(1)}°C` : '—'}
+              </span>
+              <span className="text-xs text-slate-500">{weatherData.weather_label}</span>
+              <span className="text-xs text-slate-600">· Wind {weatherData.wind_kmh?.toFixed(0)} km/h</span>
+            </div>
+            {weatherData.is_severe && (
+              <div className="text-xs font-semibold mt-0.5" style={{ color: '#fbbf24' }}>
+                ⚠️ Severe weather alert active
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Top row: sub-scores + macro stats */}
       <div className="grid grid-cols-2 gap-4">

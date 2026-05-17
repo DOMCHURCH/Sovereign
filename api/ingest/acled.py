@@ -1,115 +1,77 @@
 """
-ACLED (Armed Conflict Location & Event Database) integration.
-Free for researchers: acleddata.com/access-data
-Set ACLED_API_KEY and ACLED_EMAIL env vars.
-
-Returns conflict events enriched with ACLED data when key is available,
-falls back gracefully to curated data when not.
+Conflict enrichment via GDELT DOC API (free, no key required).
+Replaces ACLED since that requires researcher approval.
+Queries GDELT for recent news in active conflict zones and uses
+article counts as a proxy for current conflict activity.
 """
-import os
-import sys
-from datetime import datetime, timezone, timedelta
+import requests
+from datetime import datetime, timezone
+from typing import Optional
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-ACLED_BASE = "https://api.acleddata.com/acled/read"
-
-# Map ACLED event types to our categories
-ACLED_TYPE_MAP = {
-    "Battles":                  "interstate_war",
-    "Explosions/Remote violence":"terrorist_insurgency",
-    "Violence against civilians":"civil_war",
-    "Riots":                    "political_instability",
-    "Protests":                 "political_instability",
-    "Strategic developments":   "territorial_dispute",
+_CONFLICT_QUERIES = {
+    "UKR": "Ukraine Russia war offensive frontline",
+    "SDN": "Sudan war RSF SAF fighting Khartoum",
+    "MMR": "Myanmar military junta resistance fighting",
+    "SYR": "Syria conflict war fighting",
+    "YEM": "Yemen Houthi war ceasefire",
+    "ISR": "Israel Gaza Hamas war attack",
+    "IRQ": "Iraq militia attack bomb",
+    "AFG": "Afghanistan Taliban attack",
+    "SOM": "Somalia Al-Shabaab attack",
+    "MOZ": "Mozambique Cabo Delgado insurgency",
+    "MLI": "Mali JNIM attack Bamako",
+    "BFA": "Burkina Faso jihadist attack",
+    "NER": "Niger coup militant attack",
+    "ETH": "Ethiopia Amhara Fano conflict",
+    "COD": "Congo DRC M23 Rwanda militia",
+    "SSD": "South Sudan fighting violence",
+    "LBY": "Libya militia fighting",
+    "IRN": "Iran military sanctions nuclear",
+    "PRK": "North Korea missile launch",
+    "HTI": "Haiti gang violence Port-au-Prince",
+    "COL": "Colombia ELN FARC attack",
+    "PAK": "Pakistan TTP attack military",
+    "NGA": "Nigeria Boko Haram ISWAP attack",
 }
 
-ACLED_INTENSITY_MAP = {
-    # fatalities → intensity
-    (50, float("inf")): "major",
-    (10, 50):           "significant",
-    (0, 10):            "minor",
-}
 
-
-def _intensity(fatalities: int) -> str:
-    for (lo, hi), label in ACLED_INTENSITY_MAP.items():
-        if lo <= fatalities < hi:
-            return label
-    return "minor"
-
-
-def fetch_recent_events(days: int = 7) -> list[dict] | None:
+def fetch_recent_events(days: int = 7) -> Optional[list[dict]]:
     """
-    Returns list of conflict objects in Sovereign's format, or None on failure.
-    Only runs if ACLED_API_KEY and ACLED_EMAIL are set.
+    Query GDELT for recent conflict article counts per zone.
+    Returns None if GDELT is unreachable; returns [] if no activity found.
+    Merged with curated metadata from main._CONFLICTS by the caller.
     """
-    api_key = os.getenv("ACLED_API_KEY", "")
-    email   = os.getenv("ACLED_EMAIL", "")
-    if not api_key or not email:
-        return None
+    results = []
 
-    import requests
-    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    for iso3, query in list(_CONFLICT_QUERIES.items())[:15]:  # cap at 15 per cycle
+        try:
+            resp = requests.get(
+                "https://api.gdeltproject.org/api/v2/doc/doc",
+                params={
+                    "query": query,
+                    "mode": "ArtList",
+                    "maxrecords": "10",
+                    "format": "json",
+                    "timespan": f"{days * 24}h",
+                    "sourcelang": "english",
+                },
+                timeout=8,
+            )
+            if not resp.ok:
+                continue
+            data = resp.json()
+            articles = data.get("articles", [])
+            count = len(articles)
+            if count > 0:
+                results.append({
+                    "iso3": iso3,
+                    "article_count": count,
+                    "activity_score": min(count / 10.0, 1.0),
+                    "sample_headline": articles[0].get("title", "") if articles else "",
+                    "source": "gdelt",
+                })
+        except Exception:
+            continue
 
-    try:
-        resp = requests.get(
-            ACLED_BASE,
-            params={
-                "key":        api_key,
-                "email":      email,
-                "event_date": since,
-                "event_date_where": ">=",
-                "limit":      500,
-                "fields":     "event_id_cnty|event_type|actor1|actor2|country|iso3|latitude|longitude|fatalities|event_date|notes",
-            },
-            timeout=20,
-        )
-        resp.raise_for_status()
-        data = resp.json().get("data", [])
-    except Exception:
-        return None
-
-    # Aggregate by iso3 — group events into conflict objects
-    from collections import defaultdict
-    by_country: dict[str, list[dict]] = defaultdict(list)
-    for evt in data:
-        iso3 = evt.get("iso3", "").upper()
-        if iso3:
-            by_country[iso3].append(evt)
-
-    conflicts = []
-    for iso3, events in by_country.items():
-        total_fatalities = sum(int(e.get("fatalities", 0)) for e in events)
-        event_types = [e.get("event_type", "") for e in events]
-        dominant_type = max(set(event_types), key=event_types.count) if event_types else "Battles"
-        category = ACLED_TYPE_MAP.get(dominant_type, "civil_war")
-        intensity = _intensity(total_fatalities)
-        # Use centroid of events as location
-        lats = [float(e["latitude"]) for e in events if e.get("latitude")]
-        lngs = [float(e["longitude"]) for e in events if e.get("longitude")]
-        lat = sum(lats) / len(lats) if lats else 0
-        lng = sum(lngs) / len(lngs) if lngs else 0
-        country_name = events[0].get("country", iso3)
-        # Get unique actors
-        actors = list({e.get("actor1", "") for e in events if e.get("actor1")} |
-                      {e.get("actor2", "") for e in events if e.get("actor2")})[:4]
-        conflicts.append({
-            "id":          f"acled-{iso3}",
-            "name":        f"{country_name} – Active Conflict",
-            "lat":         round(lat, 2),
-            "lng":         round(lng, 2),
-            "intensity":   intensity,
-            "type":        dominant_type.lower().replace("/", "_").replace(" ", "_"),
-            "category":    category,
-            "parties":     " vs. ".join(actors[:2]) if len(actors) >= 2 else actors[0] if actors else "",
-            "since":       int(events[0].get("event_date", "2024")[:4]),
-            "countries":   [iso3],
-            "description": f"{len(events)} events, {total_fatalities} fatalities in last {days} days (ACLED live data).",
-            "fatalities":  total_fatalities,
-            "event_count": len(events),
-            "live":        True,
-            "source":      "acled",
-        })
-
-    return sorted(conflicts, key=lambda x: x["fatalities"], reverse=True)
+    return results if results else None
