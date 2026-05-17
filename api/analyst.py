@@ -25,7 +25,7 @@ Data: World Bank WGI, OFAC SDN, country ETFs via yfinance, RSS news sentiment (V
 
 def _brave_search(query: str) -> str:
     """Return top 3 search result snippets as context string."""
-    api_key = os.getenv("BRAVE_SEARCH_API_KEY", "")
+    api_key = os.getenv("BRAVE_SEARCH_API_KEY") or os.getenv("BRAVE_SEARCH_API", "")
     if not api_key:
         return ""
     try:
