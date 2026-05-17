@@ -116,6 +116,28 @@ const ARC_COLORS = {
   minor:       ['rgba(251,191,36,0.9)', 'rgba(251,191,36,0.3)'],
 }
 
+// Fallback conflict data shown when the backend is unreachable
+const FALLBACK_CONFLICTS = [
+  {id:"ukraine",name:"Russia–Ukraine War",lat:49.0,lng:32.0,intensity:"major",category:"interstate_war",attacker_iso3:"RUS",defender_iso3:"UKR",parties:"Russia vs. Ukraine",since:2022,description:"Full-scale invasion across eastern and southern Ukraine.",countries:["UKR","RUS"]},
+  {id:"gaza",name:"Israel–Gaza War",lat:31.4,lng:34.3,intensity:"major",category:"interstate_war",attacker_iso3:"ISR",defender_iso3:"ISR",parties:"Israel vs. Hamas",since:2023,description:"Israeli military operations in Gaza following Oct 2023 Hamas attacks.",countries:["ISR"]},
+  {id:"sudan",name:"Sudan Civil War",lat:15.5,lng:30.0,intensity:"major",category:"civil_war",parties:"SAF vs. RSF",since:2023,description:"War between Sudanese Armed Forces and Rapid Support Forces.",countries:["SDN"]},
+  {id:"myanmar",name:"Myanmar Civil War",lat:20.5,lng:95.5,intensity:"major",category:"civil_war",parties:"Junta vs. resistance",since:2021,description:"Armed resistance against military junta following 2021 coup.",countries:["MMR"]},
+  {id:"drc-east",name:"DRC – Rwanda-Backed M23",lat:-1.5,lng:28.8,intensity:"major",category:"interstate_war",attacker_iso3:"RWA",defender_iso3:"COD",parties:"FARDC vs. M23/Rwanda",since:2022,description:"Rwanda-backed M23 rebels in North Kivu.",countries:["COD","RWA"]},
+  {id:"yemen-saudi",name:"Yemen – Coalition Strikes",lat:15.2,lng:44.8,intensity:"significant",category:"interstate_war",attacker_iso3:"SAU",defender_iso3:"YEM",parties:"Saudi coalition vs. Houthis",since:2015,description:"Saudi airstrikes and Houthi Red Sea attacks.",countries:["YEM","SAU"]},
+  {id:"kashmir",name:"Kashmir – India-Pakistan",lat:34.0,lng:74.5,intensity:"significant",category:"interstate_war",attacker_iso3:"PAK",defender_iso3:"IND",parties:"India vs. Pakistan (LOC)",since:1947,description:"Cross-border tensions. Escalated 2025.",countries:["IND","PAK"]},
+  {id:"somalia",name:"Somalia – Al-Shabaab",lat:4.5,lng:44.0,intensity:"significant",category:"terrorist_insurgency",parties:"FGS vs. Al-Shabaab",since:2006,description:"Al-Shabaab controls rural areas.",countries:["SOM"]},
+  {id:"sahel-mali",name:"Mali – JNIM Insurgency",lat:17.0,lng:-2.0,intensity:"significant",category:"terrorist_insurgency",parties:"FAMA vs. JNIM",since:2012,description:"Jihadist insurgency across central/northern Mali.",countries:["MLI"]},
+  {id:"sahel-burkina",name:"Burkina Faso – Insurgency",lat:12.5,lng:-1.5,intensity:"significant",category:"terrorist_insurgency",parties:"Forces vs. JNIM/ISGS",since:2015,description:"Jihadists control ~40% of territory.",countries:["BFA"]},
+  {id:"nigeria-ne",name:"Nigeria – Boko Haram/ISWAP",lat:12.0,lng:13.5,intensity:"significant",category:"terrorist_insurgency",parties:"Nigerian forces vs. ISWAP",since:2009,description:"ISWAP active in Lake Chad Basin.",countries:["NGA"]},
+  {id:"afghanistan",name:"Afghanistan – IS-K",lat:33.5,lng:66.0,intensity:"significant",category:"terrorist_insurgency",parties:"Taliban vs. IS-K",since:2021,description:"IS-K attacks on Taliban and civilians.",countries:["AFG"]},
+  {id:"pakistan-ttp",name:"Pakistan – TTP",lat:33.0,lng:70.0,intensity:"significant",category:"terrorist_insurgency",parties:"Pakistan Army vs. TTP",since:2007,description:"Tehrik-i-Taliban attacks across KP.",countries:["PAK"]},
+  {id:"ethiopia-amhara",name:"Ethiopia – Amhara Conflict",lat:11.5,lng:38.0,intensity:"significant",category:"civil_war",parties:"ENDF vs. FANO",since:2023,description:"Conflict between Ethiopian forces and Amhara militias.",countries:["ETH"]},
+  {id:"haiti",name:"Haiti – Gang Crisis",lat:18.8,lng:-72.3,intensity:"significant",category:"gang_crisis",parties:"MSS vs. gangs",since:2021,description:"Armed gangs control Port-au-Prince.",countries:["HTI"]},
+  {id:"south-china-sea",name:"South China Sea",lat:13.0,lng:115.0,intensity:"minor",category:"interstate_war",attacker_iso3:"CHN",defender_iso3:"PHL",parties:"China vs. Philippines",since:1970,description:"Chinese coast guard confrontations near Spratly Islands.",countries:["CHN","PHL"]},
+  {id:"taiwan-strait",name:"Taiwan Strait",lat:23.5,lng:119.5,intensity:"minor",category:"interstate_war",attacker_iso3:"CHN",defender_iso3:"TWN",parties:"PRC vs. Taiwan",since:1949,description:"PLA exercises; US naval presence.",countries:["CHN","TWN"]},
+  {id:"westbank",name:"West Bank Violence",lat:31.9,lng:35.2,intensity:"significant",category:"territorial_dispute",parties:"Israeli forces vs. militants",since:2022,description:"Raids, settler violence, militant attacks.",countries:["ISR"]},
+]
+
 // Cache GeoJSON at module level so it survives navigation (no CDN round-trip on remount)
 let _geoCache = null
 
@@ -144,7 +166,9 @@ export default function Globe() {
     api.alerts().then(setAlerts).catch(() => {})
     api.portfolioImpact().then(setImpact).catch(() => {})
     setConflictsLoading(true)
-    api.conflicts().then(d => { setConflicts(d); setConflictsLoading(false) }).catch(() => setConflictsLoading(false))
+    api.conflicts()
+      .then(d => { setConflicts(d && d.length > 0 ? d : FALLBACK_CONFLICTS); setConflictsLoading(false) })
+      .catch(() => { setConflicts(FALLBACK_CONFLICTS); setConflictsLoading(false) })
     api.conflictsSource().then(d => setConflictSource(d.source)).catch(() => {})
 
     api.gti().then(d => setGtiData(d.slice(0, 8))).catch(() => {})
@@ -216,7 +240,7 @@ export default function Globe() {
     [alerts]
   )
 
-  // Pulsing rings: severe/high countries + all active conflict zones
+  // Pulsing rings: severe/high countries + conflict zones + severe weather (cyan)
   const ringsData = useMemo(() => {
     const countryRings = countries
       .filter(c => (c.risk_tier === 'severe' || c.risk_tier === 'high') && CAPITALS[c.iso3])
@@ -229,8 +253,20 @@ export default function Globe() {
         color: CAT_COLORS[c.category] || '#ef4444',
       }))
 
-    return [...countryRings, ...conflictRings]
-  }, [countries, conflicts])
+    const weatherRings = showWeather
+      ? weatherData
+          .filter(w => w.is_severe && CAPITALS[w.iso3])
+          .map(w => ({
+            lat: CAPITALS[w.iso3].lat,
+            lng: CAPITALS[w.iso3].lng,
+            iso3: w.iso3,
+            kind: 'weather',
+            color: '#06b6d4',
+          }))
+      : []
+
+    return [...countryRings, ...conflictRings, ...weatherRings]
+  }, [countries, conflicts, weatherData, showWeather])
 
   const handleClick = useCallback((feat) => {
     const iso3 = getIso3(feat)
@@ -290,7 +326,9 @@ export default function Globe() {
 
   const refreshConflicts = useCallback(() => {
     setConflictsLoading(true)
-    api.conflicts().then(d => { setConflicts(d); setConflictsLoading(false) }).catch(() => setConflictsLoading(false))
+    api.conflicts()
+      .then(d => { setConflicts(d && d.length > 0 ? d : FALLBACK_CONFLICTS); setConflictsLoading(false) })
+      .catch(() => { setConflicts(FALLBACK_CONFLICTS); setConflictsLoading(false) })
     api.conflictsSource().then(d => setConflictSource(d.source)).catch(() => {})
   }, [])
 
@@ -397,29 +435,24 @@ export default function Globe() {
           arcLabel={arcLabel}
           ringsData={ringsData}
           ringColor={r => {
+            if (r.kind === 'weather') return '#06b6d4bb'
             if (r.kind === 'conflict') return (r.color || '#ef4444') + 'cc'
             return r.tier === 'severe' ? '#ef444499' : '#f9731666'
           }}
           ringMaxRadius={r => {
+            if (r.kind === 'weather') return 5
             if (r.kind === 'conflict') return r.tier === 'major' ? 6 : 4
             return r.tier === 'severe' ? 4 : 3
           }}
-          ringPropagationSpeed={r => r.kind === 'conflict' ? (r.tier === 'major' ? 4 : 2.5) : (r.tier === 'severe' ? 3 : 2)}
-          ringRepeatPeriod={r => r.kind === 'conflict' ? (r.tier === 'major' ? 700 : 1100) : (r.tier === 'severe' ? 900 : 1400)}
-          ringAltitude={0.01}
-          htmlElementsData={severeWeatherPoints}
-          htmlElement={d => {
-            const el = document.createElement('div')
-            el.innerHTML = d.weather_emoji || '⛈️'
-            el.style.fontSize = '20px'
-            el.style.filter = 'drop-shadow(0 0 6px rgba(251,191,36,0.9))'
-            el.style.pointerEvents = 'none'
-            el.style.userSelect = 'none'
-            return el
+          ringPropagationSpeed={r => {
+            if (r.kind === 'weather') return 2
+            return r.kind === 'conflict' ? (r.tier === 'major' ? 4 : 2.5) : (r.tier === 'severe' ? 3 : 2)
           }}
-          htmlLat="lat"
-          htmlLng="lng"
-          htmlAltitude={0.02}
+          ringRepeatPeriod={r => {
+            if (r.kind === 'weather') return 1200
+            return r.kind === 'conflict' ? (r.tier === 'major' ? 700 : 1100) : (r.tier === 'severe' ? 900 : 1400)
+          }}
+          ringAltitude={0.01}
         />
 
         {/* Drag hint */}
