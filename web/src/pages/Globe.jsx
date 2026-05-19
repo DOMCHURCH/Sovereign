@@ -226,7 +226,6 @@ export default function Globe() {
   const [geoData, setGeoData] = useState(_geoCache || [])
   const [dims, setDims] = useState({ w: window.innerWidth - 288, h: window.innerHeight - 48 })
   const [conflicts, setConflicts] = useState([])
-  const [showConflicts, setShowConflicts] = useState(true)
   const [conflictSource, setConflictSource] = useState('curated')
   const [conflictsLoading, setConflictsLoading] = useState(false)
   const [gtiData, setGtiData] = useState([])
@@ -450,7 +449,6 @@ export default function Globe() {
 
   // Interstate wars → animated arc lines between attacker and defender capitals
   const arcsData = useMemo(() => {
-    if (!showConflicts) return []
     return conflicts
       .filter(d => d.category === 'interstate_war' && d.attacker_iso3 && d.defender_iso3
         && CAPITALS[d.attacker_iso3] && CAPITALS[d.defender_iso3]
@@ -462,7 +460,7 @@ export default function Globe() {
         endLat:   CAPITALS[d.defender_iso3].lat,
         endLng:   CAPITALS[d.defender_iso3].lng,
       }))
-  }, [conflicts, showConflicts])
+  }, [conflicts])
 
   const arcColor    = useCallback(d => ARC_COLORS[d.intensity] || ARC_COLORS.minor, [])
   const arcLabel    = useCallback(d => conflictLabel(d), [conflictLabel])
@@ -502,7 +500,7 @@ export default function Globe() {
           onPolygonClick={handleClick}
           onPolygonHover={handleHover}
           polygonsTransitionDuration={200}
-          pointsData={showConflicts ? conflicts : []}
+          pointsData={conflicts}
           pointLat="lat"
           pointLng="lng"
           pointColor={conflictColor}
@@ -722,38 +720,25 @@ export default function Globe() {
             </button>
           </div>
 
-          {/* Conflict zones toggle */}
+          {/* Conflict zones */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-mono">
                 <span className="text-slate-400 font-semibold">Conflicts</span>
                 {conflicts.length > 0 && <span className="text-slate-600">({conflicts.length})</span>}
               </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={refreshConflicts}
-                  disabled={conflictsLoading}
-                  className="text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-40 text-xs px-1"
-                  title="Refresh live data"
-                >
-                  {conflictsLoading ? '⟳' : '↺'}
-                </button>
-                <button
-                  onClick={() => setShowConflicts(v => !v)}
-                  className="text-xs font-mono px-2 py-0.5 rounded transition-all"
-                  style={{
-                    background: showConflicts ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.04)',
-                    color: showConflicts ? '#f87171' : '#475569',
-                    border: `1px solid ${showConflicts ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.08)'}`,
-                  }}
-                >
-                  {showConflicts ? 'ON' : 'OFF'}
-                </button>
-              </div>
+              <button
+                onClick={refreshConflicts}
+                disabled={conflictsLoading}
+                className="text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-40 text-xs px-1"
+                title="Refresh live data"
+              >
+                {conflictsLoading ? '⟳' : '↺'}
+              </button>
             </div>
 
             {/* Category legend */}
-            {showConflicts && (
+            {conflicts.length > 0 && (
               <div className="space-y-1 pl-0.5">
                 {Object.entries(CAT_LABELS).map(([cat, label]) => {
                   const color = CAT_COLORS[cat]
