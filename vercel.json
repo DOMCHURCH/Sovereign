@@ -11,8 +11,9 @@
       "use": "@vercel/python"
     }
   ],
-  "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/main.py" },
-    { "source": "/(.*)", "destination": "/index.html" }
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/main.py" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
