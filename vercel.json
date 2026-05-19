@@ -9,7 +9,7 @@
   },
   "functions": {
     "api/**/*.py": {
-      "excludeFiles": "{web/**,node_modules/**,web/node_modules/**,web/dist/**,dist/**,api/dist/**,src/**,public/**,assets/**,tests/**,__tests__/**,docs/**,.git/**,.vercel/**,.venv/**,venv/**,**/__pycache__/**,**/*.pyc,**/*.ipynb,**/*.csv,**/*.parquet,**/*.sqlite,**/*.db,**/*.png,**/*.jpg,**/*.jpeg,**/*.webp,**/*.gif,**/*.mp4,**/*.mov}"
+      "excludeFiles": "{web/**,node_modules/**,.git/**,dist/**,**/__pycache__/**,**/*.pyc}"
     }
   },
   "rewrites": [
