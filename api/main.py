@@ -220,22 +220,45 @@ def get_country_history(iso3: str):
 
 
 def _get_newsapi_keys() -> list[str]:
-    """Return all configured NewsAPI keys. Supports:
-    - NEWS_API_KEYS=key1,key2,key3  (comma-separated, preferred)
-    - NEWS_API_KEY=key1              (single key, legacy)
-    - NEWS_API_KEY_1 / _2 / _3 ...  (numbered)
+    """Return all configured NewsAPI keys. Supports any of:
+    - NEWS_API_KEYS=key1,key2,key3   (comma-separated)
+    - NEWS_API_KEY=key1              (single)
+    - NEWS_API_KEY_N / NEWS_API_N    (numbered)
+    - news_api_N / news_api_key_N    (lowercase Vercel names)
+    Also scans all env vars whose name contains 'news' and 'api'.
     """
-    keys = []
-    multi = os.getenv("NEWS_API_KEYS", "")
-    if multi:
-        keys.extend(k.strip() for k in multi.split(",") if k.strip())
-    single = os.getenv("NEWS_API_KEY", "")
-    if single and single not in keys:
-        keys.append(single)
+    seen: set[str] = set()
+    keys: list[str] = []
+
+    def _add(k: str) -> None:
+        v = k.strip()
+        if v and v not in seen:
+            seen.add(v)
+            keys.append(v)
+
+    # Explicit comma-separated list
+    for v in os.getenv("NEWS_API_KEYS", "").split(","):
+        _add(v)
+
+    # Common single-key names (exact)
+    for name in ("NEWS_API_KEY", "NEWSAPI_KEY", "NEWS_API", "NEWSAPI"):
+        _add(os.getenv(name, ""))
+
+    # Numbered variants: NEWS_API_KEY_N, NEWS_API_N (upper and lower)
     for i in range(1, 10):
-        k = os.getenv(f"NEWS_API_KEY_{i}", "")
-        if k and k not in keys:
-            keys.append(k)
+        for pattern in (
+            f"NEWS_API_KEY_{i}", f"NEWS_API_{i}",
+            f"news_api_key_{i}", f"news_api_{i}",
+            f"NEWSAPI_KEY_{i}", f"NEWSAPI_{i}",
+        ):
+            _add(os.getenv(pattern, ""))
+
+    # Fallback: scan all env vars whose name looks like a NewsAPI key slot
+    for env_name, env_val in os.environ.items():
+        lower = env_name.lower()
+        if "news" in lower and ("api" in lower or "key" in lower) and env_val:
+            _add(env_val)
+
     return keys
 
 
@@ -378,7 +401,8 @@ def get_gti():
 
 @router.get("/news/feed")
 def get_news_feed(iso3: str | None = None, limit: int = 50):
-    """Recent news articles with sentiment and event classification."""
+    """Recent news articles with sentiment and event classification.
+    Reads from DB when populated; falls back to live NewsAPI fetch otherwise."""
     conn = get_conn()
     try:
         if iso3:
@@ -393,17 +417,121 @@ def get_news_feed(iso3: str | None = None, limit: int = 50):
                    FROM news_articles ORDER BY published_at DESC LIMIT ?""",
                 [limit],
             ).fetchall()
-        return [
-            {
-                "url": r[0], "iso3": r[1], "title": r[2], "source": r[3],
-                "published_at": r[4].isoformat() if hasattr(r[4], "isoformat") else str(r[4]),
-                "sentiment": r[5], "event_type": r[6], "summary": r[7],
-                "country_name": COUNTRY_METADATA.get(r[1], (r[1], ""))[0],
-            }
-            for r in rows
-        ]
+
+        if rows:
+            return [
+                {
+                    "url": r[0], "iso3": r[1], "title": r[2], "source": r[3],
+                    "published_at": r[4].isoformat() if hasattr(r[4], "isoformat") else str(r[4]),
+                    "sentiment": r[5], "event_type": r[6], "summary": r[7],
+                    "country_name": COUNTRY_METADATA.get(r[1], (r[1], ""))[0],
+                }
+                for r in rows
+            ]
     except Exception:
-        return []
+        pass
+
+    # DB empty (scheduler not yet run on serverless) — fetch live from NewsAPI
+    return _live_news_feed(iso3=iso3, limit=limit)
+
+
+def _live_news_feed(iso3: str | None = None, limit: int = 50) -> list[dict]:
+    """Fetch live geopolitical news from NewsAPI and return in feed format."""
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    vader = SentimentIntensityAnalyzer()
+
+    _EVENT_KEYWORDS = {
+        "sanctions": ["sanction", "embargo", "restrict"],
+        "conflict": ["war", "attack", "military", "missile", "bomb", "troops"],
+        "crisis": ["crisis", "collapse", "default", "coup", "protest", "unrest"],
+        "diplomacy": ["summit", "treaty", "agreement", "ceasefire", "talks"],
+        "economy": ["gdp", "inflation", "trade", "tariff", "recession"],
+    }
+
+    def _classify(text: str) -> str:
+        t = text.lower()
+        for etype, kws in _EVENT_KEYWORDS.items():
+            if any(k in t for k in kws):
+                return etype
+        return "general"
+
+    results = []
+
+    if iso3:
+        # Single-country mode: search by country name
+        country_name = COUNTRY_METADATA.get(iso3.upper(), (iso3, ""))[0]
+        from_date = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+        articles = _newsapi_fetch({
+            "q": f'"{country_name}" (war OR sanctions OR crisis OR economy OR military OR politics)',
+            "from": from_date,
+            "language": "en",
+            "sortBy": "relevancy",
+            "pageSize": min(limit, 20),
+        })
+        for a in articles:
+            title = a.get("title") or ""
+            desc = a.get("description") or ""
+            text = f"{title} {desc}"
+            score = vader.polarity_scores(text)["compound"]
+            results.append({
+                "url": a.get("url", ""),
+                "iso3": iso3.upper(),
+                "title": title,
+                "source": a.get("source", {}).get("name", ""),
+                "published_at": a.get("publishedAt", ""),
+                "sentiment": round(score, 3),
+                "event_type": _classify(text),
+                "summary": desc[:200] if desc else "",
+                "country_name": country_name,
+            })
+    else:
+        # Global feed: fetch for top high-risk countries in parallel
+        HIGH_RISK_COUNTRIES = [
+            ("RUS", "Russia"), ("UKR", "Ukraine"), ("CHN", "China"),
+            ("IRN", "Iran"), ("ISR", "Israel"), ("PRK", "North Korea"),
+            ("SYR", "Syria"), ("SDN", "Sudan"), ("MMR", "Myanmar"),
+            ("VEN", "Venezuela"), ("AFG", "Afghanistan"), ("PAK", "Pakistan"),
+        ]
+        from_date = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
+
+        def _fetch_country(iso, name):
+            arts = _newsapi_fetch({
+                "q": f'"{name}" (war OR conflict OR sanctions OR crisis OR military)',
+                "from": from_date,
+                "language": "en",
+                "sortBy": "publishedAt",
+                "pageSize": 5,
+            })
+            out = []
+            for a in arts:
+                title = a.get("title") or ""
+                desc = a.get("description") or ""
+                text = f"{title} {desc}"
+                score = vader.polarity_scores(text)["compound"]
+                out.append({
+                    "url": a.get("url", ""),
+                    "iso3": iso,
+                    "title": title,
+                    "source": a.get("source", {}).get("name", ""),
+                    "published_at": a.get("publishedAt", ""),
+                    "sentiment": round(score, 3),
+                    "event_type": _classify(text),
+                    "summary": desc[:200] if desc else "",
+                    "country_name": name,
+                })
+            return out
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(_fetch_country, iso, name) for iso, name in HIGH_RISK_COUNTRIES[:8]]
+            for future in as_completed(futures, timeout=8):
+                try:
+                    results.extend(future.result())
+                except Exception:
+                    pass
+
+    results.sort(key=lambda x: x.get("published_at", ""), reverse=True)
+    return results[:limit]
 
 
 @router.get("/market/snapshot")
