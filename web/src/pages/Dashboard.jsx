@@ -113,10 +113,10 @@ function StatCard({ label, value, sub, valueColor, badge, onClick, loading, acce
 
 function GTILeaderboard({ data, loading, navigate }) {
   const top10 = [...data]
-    .sort((a, b) => (b.gti_score ?? 0) - (a.gti_score ?? 0))
+    .sort((a, b) => (b.gti ?? 0) - (a.gti ?? 0))
     .slice(0, 10)
 
-  const maxScore = top10[0]?.gti_score ?? 100
+  const maxScore = top10[0]?.gti ?? 100
 
   return (
     <div className="glass-card card-accent-top p-5 flex flex-col h-full">
@@ -131,9 +131,9 @@ function GTILeaderboard({ data, loading, navigate }) {
               <ShimmerRow key={i} height={32} className="w-full" />
             ))
           : top10.map((country, i) => {
-              const tier = country.risk_tier || 'low'
+              const tier = country.tier || 'low'
               const tierColor = TIER_COLORS[tier] || TIER_COLORS.low
-              const fillPct = maxScore > 0 ? ((country.gti_score ?? 0) / maxScore) * 100 : 0
+              const fillPct = maxScore > 0 ? ((country.gti ?? 0) / maxScore) * 100 : 0
 
               return (
                 <button
@@ -170,7 +170,7 @@ function GTILeaderboard({ data, loading, navigate }) {
                   {/* Score */}
                   <span className="font-mono text-xs font-bold w-10 text-right shrink-0"
                         style={{ color: tierColor }}>
-                    {country.gti_score != null ? country.gti_score.toFixed(1) : '—'}
+                    {country.gti != null ? country.gti.toFixed(1) : '—'}
                   </span>
 
                   {/* Tier badge */}
@@ -398,7 +398,12 @@ function NewsFeed({ articles, loading }) {
 // ─── Market Movers ────────────────────────────────────────────────────────────
 
 function MarketMovers({ snapshot, loading }) {
-  const equities = snapshot?.equities || []
+  const raw = snapshot?.equities
+  const equities = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object'
+      ? Object.entries(raw).map(([ticker, v]) => ({ ticker, ...v }))
+      : []
 
   const sorted = [...equities]
     .filter(e => e.change_pct != null)
@@ -596,8 +601,8 @@ export default function Dashboard() {
   )
 
   // Top country by GTI
-  const topGTI = [...gtiData].sort((a, b) => (b.gti_score ?? 0) - (a.gti_score ?? 0))[0]
-  const topGTITier  = topGTI?.risk_tier || 'low'
+  const topGTI = [...gtiData].sort((a, b) => (b.gti ?? 0) - (a.gti ?? 0))[0]
+  const topGTITier  = topGTI?.tier || 'low'
   const topGTIColor = TIER_COLORS[topGTITier] || TIER_COLORS.low
 
   // Portfolio impact
@@ -648,7 +653,7 @@ export default function Dashboard() {
         />
         <StatCard
           label="Highest GTI"
-          value={loading ? '—' : (topGTI?.gti_score?.toFixed(1) ?? '—')}
+          value={loading ? '—' : (topGTI?.gti?.toFixed(1) ?? '—')}
           sub={topGTI?.name || topGTI?.iso3 || '—'}
           valueColor={topGTIColor}
           onClick={topGTI?.iso3 ? () => navigate(`/country/${topGTI.iso3}`) : undefined}

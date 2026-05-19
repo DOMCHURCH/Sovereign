@@ -50,6 +50,7 @@ export async function streamAnalyst(message, history, countryContext, onChunk, o
     body: JSON.stringify({ message, history, country_context: countryContext }),
   })
 
+  if (!res.ok) { onDone(); return; }
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''

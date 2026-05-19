@@ -170,7 +170,10 @@ export default function Scenario() {
         iso,
         chunk => setAiBriefing(prev => prev + chunk),
         () => setAiStreaming(false),
-      )
+      ).catch(() => {
+        setAiStreaming(false)
+        setAiBriefing('Analysis unavailable. Check API key configuration.')
+      })
     } catch {
       setIsRunning(false)
     }

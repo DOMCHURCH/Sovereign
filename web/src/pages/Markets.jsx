@@ -47,7 +47,7 @@ export default function Markets() {
       .filter(c => c.sovereign_risk_score != null)
       .sort((a, b) => b.sovereign_risk_score - a.sovereign_risk_score)
       .slice(0, 5)
-    const prompt = `Analyze market risk for institutional investors. The 5 highest-risk countries with ETF exposure are: ${top5.map(c => `${c.name} (${COUNTRY_ETFS[c.iso3] || 'no ETF'}, score ${c.sovereign_risk_score?.toFixed(1)}, ${c.risk_tier})`).join('; ')}. Which ETFs face the most immediate danger and why? Be specific and quantitative in 3 sentences.`
+    const prompt = `Analyze geopolitical market risk for institutional investors. The 5 highest-risk countries with ETF exposure are: ${top5.map(c => `${c.name} (${COUNTRY_ETFS[c.iso3] || 'no ETF'}, sovereign risk score ${c.sovereign_risk_score?.toFixed(1)}, tier: ${c.risk_tier})`).join('; ')}. Which ETFs face the most immediate geopolitical danger and why? Focus on risk transmission channels and macro drivers — do not invent or cite specific ETF price levels, returns, or performance numbers not provided here. Answer in 3 sentences.`
     setAiLoading(true)
     streamAnalyst(prompt, [], null,
       chunk => setAiInsight(prev => prev + chunk),

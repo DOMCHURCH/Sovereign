@@ -415,7 +415,8 @@ def get_market_snapshot():
         all_tickers = list(COUNTRY_ETFS.values()) + list(COMMODITIES.values())
         data = yf.download(all_tickers, period="5d", auto_adjust=True, progress=False)
         close = data["Close"] if "Close" in data.columns else data
-        result = {"equities": {}, "commodities": {}}
+        equities = []
+        commodities = []
         ticker_to_iso3 = {v: k for k, v in COUNTRY_ETFS.items()}
         for ticker in all_tickers:
             if ticker not in close.columns:
@@ -426,15 +427,15 @@ def get_market_snapshot():
             latest = float(prices.iloc[-1])
             prev   = float(prices.iloc[-2])
             chg    = (latest - prev) / prev if prev else 0
-            entry  = {"price": round(latest, 2), "change_pct": round(chg * 100, 2)}
+            entry  = {"ticker": ticker, "price": round(latest, 2), "change_pct": round(chg * 100, 2)}
             iso3 = ticker_to_iso3.get(ticker)
             if iso3:
                 entry["iso3"] = iso3
                 entry["country"] = COUNTRY_METADATA.get(iso3, (iso3, ""))[0]
-                result["equities"][ticker] = entry
+                equities.append(entry)
             else:
-                result["commodities"][ticker] = entry
-        return result
+                commodities.append(entry)
+        return {"equities": equities, "commodities": commodities}
     except Exception as e:
         return {"error": str(e)}
 
@@ -756,40 +757,48 @@ def get_country_report(iso3: str):
 @router.get("/countries/{iso3}/contagion")
 def get_country_contagion(iso3: str):
     iso3 = iso3.upper()
-    conn = get_conn()
-    rows = conn.execute(
-        """
-        SELECT ce.target_country, ce.transmission_weight, ce.channel
-        FROM contagion_edges ce
-        INNER JOIN (SELECT source_country, MAX(computed_at) max_at FROM contagion_edges GROUP BY source_country) l
-            ON ce.source_country = l.source_country AND ce.computed_at = l.max_at
-        WHERE ce.source_country = ? ORDER BY ce.transmission_weight DESC
-        """,
-        [iso3],
-    ).fetchall()
+    try:
+        conn = get_conn()
+        rows = conn.execute(
+            """
+            SELECT ce.target_country, ce.transmission_weight, ce.channel
+            FROM contagion_edges ce
+            INNER JOIN (SELECT source_country, MAX(computed_at) max_at FROM contagion_edges GROUP BY source_country) l
+                ON ce.source_country = l.source_country AND ce.computed_at = l.max_at
+            WHERE ce.source_country = ? ORDER BY ce.transmission_weight DESC
+            """,
+            [iso3],
+        ).fetchall()
 
-    from analytics.contagion import propagate_shock, build_contagion_graph
-    import pandas as pd
-    countries = hydrate_countries(conn)
-    corr_rows = conn.execute(
-        "SELECT country_a, country_b, correlation_30d FROM correlations WHERE date = (SELECT MAX(date) FROM correlations)"
-    ).fetchall()
-    correlations = pd.DataFrame(corr_rows, columns=["country_a", "country_b", "correlation_30d"])
-    G = build_contagion_graph(countries, correlations)
-    score_row = conn.execute(
-        "SELECT score FROM sovereign_risk WHERE country_iso3 = ? ORDER BY computed_at DESC LIMIT 1", [iso3]
-    ).fetchone()
-    shock = float(score_row[0]) if score_row else 50.0
-    propagated = propagate_shock(G, iso3, shock)
-    return {
-        "epicenter": iso3,
-        "shock_magnitude": shock,
-        "direct_edges": [{"target": r[0], "weight": r[1], "channel": r[2]} for r in rows],
-        "propagated_impacts": [
-            {"country": k, "estimated_risk_increase": round(v, 2)}
-            for k, v in sorted(propagated.items(), key=lambda x: x[1], reverse=True)[:10]
-        ],
-    }
+        from analytics.contagion import propagate_shock, build_contagion_graph
+        import pandas as pd
+        countries = hydrate_countries(conn)
+        corr_rows = conn.execute(
+            "SELECT country_a, country_b, correlation_30d FROM correlations WHERE date = (SELECT MAX(date) FROM correlations)"
+        ).fetchall()
+        correlations = pd.DataFrame(corr_rows, columns=["country_a", "country_b", "correlation_30d"])
+        G = build_contagion_graph(countries, correlations)
+        score_row = conn.execute(
+            "SELECT score FROM sovereign_risk WHERE country_iso3 = ? ORDER BY computed_at DESC LIMIT 1", [iso3]
+        ).fetchone()
+        shock = float(score_row[0]) if score_row else 50.0
+        propagated = propagate_shock(G, iso3, shock)
+        return {
+            "epicenter": iso3,
+            "shock_magnitude": shock,
+            "direct_edges": [{"target": r[0], "weight": r[1], "channel": r[2]} for r in rows],
+            "propagated_impacts": [
+                {"iso3": k, "country": COUNTRY_METADATA.get(k, (k, ""))[0], "estimated_risk_increase": round(v, 2)}
+                for k, v in sorted(propagated.items(), key=lambda x: x[1], reverse=True)[:10]
+            ],
+        }
+    except Exception:
+        return {
+            "epicenter": iso3,
+            "shock_magnitude": 50.0,
+            "direct_edges": [],
+            "propagated_impacts": [],
+        }
 
 
 @router.get("/alerts", response_model=list[AlertModel])
@@ -874,9 +883,30 @@ def get_portfolio_impact():
 @router.post("/portfolio/stress")
 def stress_test(req: StressRequest):
     iso3 = req.country.upper()
-    impact = estimate_portfolio_impact({iso3: req.shock_magnitude})
+    shock = float(req.shock_magnitude)
+
+    # Build contagion-propagated risk deltas so indirect exposures register
+    try:
+        conn = get_conn()
+        import pandas as pd
+        from analytics.contagion import propagate_shock, build_contagion_graph
+        countries_data = hydrate_countries(conn)
+        corr_rows = conn.execute(
+            "SELECT country_a, country_b, correlation_30d FROM correlations WHERE date = (SELECT MAX(date) FROM correlations)"
+        ).fetchall()
+        correlations = pd.DataFrame(corr_rows, columns=["country_a", "country_b", "correlation_30d"])
+        G = build_contagion_graph(countries_data, correlations)
+        propagated = propagate_shock(G, iso3, shock)
+    except Exception:
+        propagated = {}
+
+    # Merge direct shock with propagated shocks
+    risk_deltas = {k: v for k, v in propagated.items()}
+    risk_deltas[iso3] = max(risk_deltas.get(iso3, 0), shock)
+
+    impact = estimate_portfolio_impact(risk_deltas)
     return {
-        "scenario": {"country": iso3, "shock_magnitude": req.shock_magnitude},
+        "scenario": {"country": iso3, "shock_magnitude": shock},
         "total_shock_pct": impact.total_shock_pct,
         "total_shock_usd": impact.total_shock_usd,
         "position_attribution": [{"ticker": p.ticker, "weight": p.weight, "shock_contribution_pct": p.shock_contribution_pct} for p in impact.position_attribution],

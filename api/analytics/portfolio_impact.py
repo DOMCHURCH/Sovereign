@@ -2,18 +2,29 @@ from dataclasses import dataclass
 from db import get_conn
 
 DEMO_PORTFOLIO = {
-    "SPY":  0.30, "FXI":  0.08, "EWG":  0.05, "EWJ":  0.05,
-    "INDA": 0.04, "EWZ":  0.03, "TLT":  0.20, "GLD":  0.10,
-    "USO":  0.05, "LQD":  0.10,
+    # Core developed markets
+    "SPY":  0.25, "EWG":  0.03, "EWJ":  0.03, "EWU":  0.02,
+    "EWQ":  0.02, "EWI":  0.01, "EWC":  0.02, "EWA":  0.01,
+    # Emerging markets
+    "FXI":  0.06, "INDA": 0.03, "EWZ":  0.02, "EWY":  0.02,
+    "EWW":  0.01, "EZA":  0.01, "KSA":  0.01, "EWS":  0.01,
+    "EWH":  0.01, "EWT":  0.01, "ARGT": 0.01,
+    # High-risk / sanctioned-adjacent
+    "ERUS": 0.01,
+    # Fixed income & commodities
+    "TLT":  0.20, "LQD":  0.08, "GLD":  0.08, "USO":  0.04,
 }
 
-AUM = 1_000_000
+AUM = 10_000_000
 
-# Beta of each position to its country ETF (or itself)
+# Beta of each position to geopolitical risk shocks
 POSITION_BETAS = {
-    "SPY": 1.0, "FXI": 1.0, "EWG": 1.0, "EWJ": 1.0,
-    "INDA": 1.0, "EWZ": 1.0, "TLT": -0.3, "GLD": 0.1,
-    "USO": 0.2, "LQD": 0.2,
+    "SPY": 0.8,  "EWG": 1.0,  "EWJ": 0.9,  "EWU": 0.9,
+    "EWQ": 1.0,  "EWI": 1.1,  "EWC": 0.8,  "EWA": 0.8,
+    "FXI": 1.2,  "INDA": 1.1, "EWZ": 1.2,  "EWY": 1.0,
+    "EWW": 1.1,  "EZA": 1.2,  "KSA": 1.3,  "EWS": 0.9,
+    "EWH": 1.1,  "EWT": 1.2,  "ARGT": 1.4, "ERUS": 2.0,
+    "TLT": -0.3, "LQD": 0.15, "GLD": -0.1, "USO": 0.25,
 }
 
 MULTI_SHOCK_CORRELATION = 0.50
