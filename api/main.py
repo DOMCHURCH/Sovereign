@@ -616,13 +616,41 @@ def _fetch_live_conflicts() -> list[dict]:
     data = None
     source = "curated"
 
-    # 1. ACLED (free researcher API — best quality)
+    # 1. GDELT parallel queries via acled.py wrapper
     try:
         from ingest.acled import fetch_recent_events
         acled_data = fetch_recent_events(days=7)
         if acled_data:
-            data = acled_data
-            source = "acled"
+            # Convert activity records to globe-compatible conflict format
+            converted = []
+            for rec in acled_data:
+                iso3 = rec.get("iso3", "")
+                if iso3 not in _CAPITALS_COORDS:
+                    continue
+                lat, lng = _CAPITALS_COORDS[iso3]
+                score = rec.get("activity_score", 0.5)
+                intensity = "major" if score >= 0.8 else "significant" if score >= 0.4 else "minor"
+                curated = next((c for c in _CONFLICTS if iso3 in c.get("countries", [])), None)
+                from ontology import COUNTRY_METADATA
+                country_name = COUNTRY_METADATA.get(iso3, (iso3, ""))[0]
+                converted.append({
+                    "id": f"live-{iso3}",
+                    "name": curated["name"] if curated else f"{country_name} – Conflict Activity",
+                    "lat": lat, "lng": lng,
+                    "intensity": intensity,
+                    "type": curated["type"] if curated else "insurgency",
+                    "category": curated.get("category", "terrorist_insurgency") if curated else "terrorist_insurgency",
+                    "attacker_iso3": curated.get("attacker_iso3") if curated else None,
+                    "defender_iso3": curated.get("defender_iso3") if curated else None,
+                    "parties": curated.get("parties", "") if curated else "",
+                    "since": curated.get("since", 2024) if curated else 2024,
+                    "countries": curated.get("countries", [iso3]) if curated else [iso3],
+                    "description": (curated["description"] if curated else "") + f" ({rec.get('article_count', 0)} live signals, headline: {rec.get('sample_headline', '')})",
+                    "live": True,
+                })
+            if converted:
+                data = converted
+                source = "gdelt_live"
     except Exception:
         pass
 

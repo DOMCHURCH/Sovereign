@@ -1,5 +1,6 @@
 import os
 import shutil
+import threading
 import duckdb
 from pathlib import Path
 from dotenv import load_dotenv
@@ -10,22 +11,30 @@ _API_DIR = Path(__file__).parent
 _SEED_DB = _API_DIR / "sovereign_seed.duckdb"
 _RUNTIME_DB = Path("/tmp/sovereign.duckdb")
 
-_conn: duckdb.DuckDBPyConnection | None = None
+_local = threading.local()
+_copy_lock = threading.Lock()
+
+
+def _runtime_db_path() -> str:
+    if _SEED_DB.exists():
+        with _copy_lock:
+            if not _RUNTIME_DB.exists():
+                shutil.copy2(str(_SEED_DB), str(_RUNTIME_DB))
+        return str(_RUNTIME_DB)
+    return str(_API_DIR / "sovereign.duckdb")
 
 
 def get_conn() -> duckdb.DuckDBPyConnection:
-    global _conn
-    if _conn is None:
-        if _SEED_DB.exists():
-            # Copy pre-seeded DB to /tmp (writable) on cold start
-            if not _RUNTIME_DB.exists():
-                shutil.copy2(str(_SEED_DB), str(_RUNTIME_DB))
-            _conn = duckdb.connect(str(_RUNTIME_DB))
-        else:
-            # Local dev fallback: file next to db.py
-            _conn = duckdb.connect(str(_API_DIR / "sovereign.duckdb"))
-            _init_schema(_conn)
-    return _conn
+    """Return a per-thread DuckDB connection. DuckDB connections are not
+    thread-safe for shared use, so each thread gets its own handle."""
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        path = _runtime_db_path()
+        conn = duckdb.connect(path)
+        if path != str(_RUNTIME_DB):
+            _init_schema(conn)
+        _local.conn = conn
+    return conn
 
 
 def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
