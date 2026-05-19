@@ -1,0 +1,17 @@
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+duckdb==0.10.3
+pandas==2.1.4
+numpy==1.26.4
+networkx==3.3
+requests==2.31.0
+anthropic>=0.28.0
+openai>=1.30.0
+apscheduler==3.10.4
+python-dotenv==1.0.1
+aiofiles==23.2.1
+httpx==0.27.0
+yfinance>=0.2.40
+feedparser>=6.0.11
+vaderSentiment>=3.3.2
