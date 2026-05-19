@@ -1,13 +1,11 @@
 import os
 import json
-import pathlib
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import sys
@@ -17,8 +15,6 @@ from db import get_conn, log_ingest
 from ontology import hydrate_countries, COUNTRY_METADATA
 from analytics.portfolio_impact import estimate_portfolio_impact, DEMO_PORTFOLIO
 from analyst import stream_analyst
-
-DIST = pathlib.Path(__file__).parent / "dist"
 
 app = FastAPI(title="Sovereign API", version="1.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
@@ -1073,21 +1069,6 @@ async def analyst_endpoint(req: AnalystRequest):
 
 app.include_router(router)
 
-if DIST.exists():
-    # Serve static assets (JS/CSS chunks)
-    app.mount("/assets", StaticFiles(directory=str(DIST / "assets")), name="assets")
-
-    @app.get("/")
-    async def serve_root():
-        return FileResponse(str(DIST / "index.html"))
-
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        file = DIST / full_path
-        if file.exists() and file.is_file():
-            return FileResponse(str(file))
-        return FileResponse(str(DIST / "index.html"))
-else:
-    @app.get("/")
-    def root():
-        return {"service": "Sovereign API", "ui": "not built — run npm build in web/", "docs": "/api/docs"}
+@app.get("/")
+def root():
+    return {"service": "Sovereign API", "version": "1.0.0", "docs": "/api/docs"}
