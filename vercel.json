@@ -3,7 +3,8 @@
   "outputDirectory": "web/dist",
   "build": {
     "env": {
-      "PYTHON_VERSION": "3.13"
+      "PYTHON_VERSION": "3.13",
+      "UV_PYTHON": "3.13"
     }
   },
   "rewrites": [
