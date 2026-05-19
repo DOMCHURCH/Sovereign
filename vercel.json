@@ -1,6 +1,11 @@
 {
   "buildCommand": "cd web && npm install && npm run build",
   "outputDirectory": "web/dist",
+  "build": {
+    "env": {
+      "PYTHON_VERSION": "3.13"
+    }
+  },
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/main.py" },
     { "source": "/(.*)", "destination": "/index.html" }
