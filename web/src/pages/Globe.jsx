@@ -224,7 +224,10 @@ export default function Globe() {
   const [lastRefresh, setLastRefresh] = useState(null)
   const [hovered, setHovered] = useState(null)
   const [geoData, setGeoData] = useState(_geoCache || [])
-  const [dims, setDims] = useState({ w: window.innerWidth - 288, h: window.innerHeight - 48 })
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const SIDEBAR_W = isMobile ? 0 : 288
+  const [dims, setDims] = useState({ w: window.innerWidth - (window.innerWidth < 768 ? 0 : 288), h: window.innerHeight - 48 })
   const [conflicts, setConflicts] = useState([])
   const [conflictSource, setConflictSource] = useState('curated')
   const [conflictsLoading, setConflictsLoading] = useState(false)
@@ -275,7 +278,11 @@ export default function Globe() {
 
   // Responsive dimensions
   useEffect(() => {
-    const update = () => setDims({ w: window.innerWidth - 288, h: window.innerHeight - 48 })
+    const update = () => {
+      const mobile = window.innerWidth < 768
+      setIsMobile(mobile)
+      setDims({ w: window.innerWidth - (mobile ? 0 : 288), h: window.innerHeight - 48 })
+    }
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
   }, [])
@@ -478,7 +485,28 @@ export default function Globe() {
   }, [weatherData, showWeather])
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: '#070710' }}>
+    <div className="flex h-screen overflow-hidden relative" style={{ background: '#070710' }}>
+      {/* Mobile sidebar backdrop */}
+      {isMobile && sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30"
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)' }}
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Mobile sidebar toggle button */}
+      {isMobile && (
+        <button
+          onClick={() => setSidebarOpen(o => !o)}
+          className="absolute top-3 right-3 z-40 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-mono font-semibold"
+          style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.35)', color: '#a78bfa' }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          Intel
+        </button>
+      )}
+
       {/* Globe area */}
       <div className="flex-1 relative overflow-hidden">
         <GlobeGL
@@ -551,7 +579,7 @@ export default function Globe() {
         </div>
 
         {/* Bottom status bar */}
-        <div className="absolute bottom-0 left-0 right-0 flex items-center gap-6 px-4 py-2 text-xs font-mono"
+        <div className="absolute bottom-0 left-0 right-0 flex items-center gap-3 md:gap-6 px-3 md:px-4 py-2 text-xs font-mono overflow-x-auto"
              style={{ background: 'rgba(7,7,16,0.92)', borderTop: '1px solid #1e1e2e', backdropFilter: 'blur(16px)' }}>
           <span className="text-slate-500">ALERTS:</span>
           {alertCounts.critical > 0 && <span className="text-red-400">🔴 {alertCounts.critical} critical</span>}
@@ -575,12 +603,25 @@ export default function Globe() {
         </div>
       </div>
 
-      {/* Right sidebar */}
-      <div className="w-72 flex flex-col overflow-hidden"
-           style={{
-             borderLeft: '1px solid #1e1e2e',
-             background: 'linear-gradient(180deg, #0d0d18 0%, #0a0a14 100%)',
-           }}>
+      {/* Right sidebar — fixed overlay on mobile, inline on desktop */}
+      <div
+        className="flex flex-col overflow-hidden overflow-y-auto"
+        style={{
+          width: isMobile ? '88vw' : '288px',
+          maxWidth: isMobile ? '360px' : undefined,
+          borderLeft: '1px solid #1e1e2e',
+          background: 'linear-gradient(180deg, #0d0d18 0%, #0a0a14 100%)',
+          ...(isMobile ? {
+            position: 'fixed',
+            top: 48,
+            right: 0,
+            bottom: 0,
+            zIndex: 35,
+            transform: sidebarOpen ? 'translateX(0)' : 'translateX(100%)',
+            transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)',
+            boxShadow: '-8px 0 40px rgba(0,0,0,0.6)',
+          } : {}),
+        }}>
         {/* Section header: Top Risk Countries */}
         <div className="px-4 pt-4 pb-2 border-b" style={{ borderColor: '#1e1e2e' }}>
           <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase flex items-center gap-2">

@@ -7,6 +7,7 @@ const Compare = lazy(() => import('./pages/Compare'))
 const Analyst = lazy(() => import('./pages/Analyst'))
 const Scenario = lazy(() => import('./pages/Scenario'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Portfolio = lazy(() => import('./pages/Portfolio'))
 import { api, streamAnalyst } from './api'
 
 const TIER_COLORS = { low: '#4ade80', elevated: '#fbbf24', high: '#fb923c', severe: '#f87171' }
@@ -27,7 +28,7 @@ function DataFreshness() {
   const label = diffMin === null ? 'LIVE' : diffMin < 2 ? 'LIVE' : diffMin < 60 ? `${diffMin}m ago` : `${Math.floor(diffMin/60)}h ago`
   const isLive = diffMin === null || diffMin < 5
   return (
-    <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md"
+    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md"
          style={{ background: isLive ? 'rgba(74,222,128,0.08)' : 'rgba(251,191,36,0.08)', border: `1px solid ${isLive ? 'rgba(74,222,128,0.15)' : 'rgba(251,191,36,0.15)'}` }}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: isLive ? '#4ade80' : '#fbbf24', boxShadow: `0 0 6px ${isLive ? 'rgba(74,222,128,0.8)' : 'rgba(251,191,36,0.8)'}` }} />
       <span className="text-xs font-mono" style={{ color: isLive ? '#4ade80' : '#fbbf24' }}>{label}</span>
@@ -71,11 +72,15 @@ function FloatingAnalyst() {
 
   return (
     <>
-      {/* Floating button */}
       <button
         onClick={() => setOpen(o => !o)}
-        className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-2xl transition-transform hover:scale-105"
-        style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)', boxShadow: '0 4px 24px rgba(99,102,241,0.5)' }}
+        className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-2xl transition-transform hover:scale-105"
+        style={{
+          bottom: 'clamp(1rem, 4vw, 1.5rem)',
+          right: 'clamp(1rem, 4vw, 1.5rem)',
+          background: 'linear-gradient(135deg, #6366f1, #a78bfa)',
+          boxShadow: '0 4px 24px rgba(99,102,241,0.5)',
+        }}
         title="Open Analyst"
       >
         {open ? (
@@ -85,86 +90,132 @@ function FloatingAnalyst() {
         )}
       </button>
 
-      {/* Panel */}
       {open && (
-        <div
-          className="fixed bottom-20 right-6 z-50 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-          style={{ width: '360px', height: '480px', background: 'rgba(10,10,20,0.97)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
-        >
-          {/* Header */}
-          <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-            <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            </div>
-            <span className="text-sm font-semibold text-slate-200">Sovereign Analyst</span>
-            <span className="ml-auto text-xs text-slate-600 font-mono">AI</span>
-          </div>
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-2">
-            {messages.length === 0 && (
-              <div className="flex flex-col gap-2 mt-2">
-                <p className="text-xs text-slate-600 px-1 mb-1">Suggested queries</p>
-                {SUGGESTED.map(q => (
-                  <button key={q} onClick={() => send(q)}
-                    className="text-left text-xs px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 transition-colors"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                    {q}
-                  </button>
-                ))}
+        <>
+          <div
+            className="fixed z-40 md:hidden"
+            style={{ inset: 0, background: 'rgba(0,0,0,0.4)' }}
+            onClick={() => setOpen(false)}
+          />
+          <div
+            className="analyst-panel fixed z-50 shadow-2xl flex flex-col overflow-hidden rounded-2xl"
+            style={{
+              left: '0.5rem',
+              right: '0.5rem',
+              bottom: '5rem',
+              height: 'clamp(300px, 65vh, 480px)',
+              background: 'rgba(10,10,20,0.97)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              backdropFilter: 'blur(20px)',
+            }}
+          >
+            <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+              <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               </div>
-            )}
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className="max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed"
-                     style={m.role === 'user'
-                       ? { background: 'rgba(99,102,241,0.2)', color: '#c4b5fd', border: '1px solid rgba(99,102,241,0.3)' }
-                       : { background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  {m.content || (streaming && i === messages.length - 1 ? <span className="animate-pulse">▋</span> : '')}
+              <span className="text-sm font-semibold text-slate-200">Sovereign Analyst</span>
+              <span className="ml-auto text-xs text-slate-600 font-mono">AI</span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-2">
+              {messages.length === 0 && (
+                <div className="flex flex-col gap-2 mt-2">
+                  <p className="text-xs text-slate-600 px-1 mb-1">Suggested queries</p>
+                  {SUGGESTED.map(q => (
+                    <button key={q} onClick={() => send(q)}
+                      className="text-left text-xs px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 transition-colors"
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      {q}
+                    </button>
+                  ))}
                 </div>
-              </div>
-            ))}
-            <div ref={bottomRef} />
-          </div>
+              )}
+              {messages.map((m, i) => (
+                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className="max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed"
+                       style={m.role === 'user'
+                         ? { background: 'rgba(99,102,241,0.2)', color: '#c4b5fd', border: '1px solid rgba(99,102,241,0.3)' }
+                         : { background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    {m.content || (streaming && i === messages.length - 1 ? <span className="animate-pulse">▋</span> : '')}
+                  </div>
+                </div>
+              ))}
+              <div ref={bottomRef} />
+            </div>
 
-          {/* Input */}
-          <div className="px-3 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
-            <div className="flex gap-2">
-              <input
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
-                placeholder="Ask about geopolitical risk..."
-                disabled={streaming}
-                className="flex-1 text-xs px-3 py-2 rounded-lg text-slate-300 placeholder-slate-600 outline-none"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
-              />
-              <button
-                onClick={() => send(input)}
-                disabled={streaming || !input.trim()}
-                className="px-3 py-2 rounded-lg text-xs font-medium transition-opacity disabled:opacity-40"
-                style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)', color: 'white' }}
-              >
-                {streaming ? '…' : '→'}
-              </button>
+            <div className="px-3 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+              <div className="flex gap-2">
+                <input
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
+                  placeholder="Ask about geopolitical risk..."
+                  disabled={streaming}
+                  className="flex-1 text-xs px-3 py-2 rounded-lg text-slate-300 placeholder-slate-600 outline-none"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+                />
+                <button
+                  onClick={() => send(input)}
+                  disabled={streaming || !input.trim()}
+                  className="px-3 py-2 rounded-lg text-xs font-medium transition-opacity disabled:opacity-40"
+                  style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)', color: 'white' }}
+                >
+                  {streaming ? '…' : '→'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </>
       )}
     </>
   )
 }
 
-function SearchBar() {
+function SearchDropdown({ countries, filtered, navigate, setQuery, setOpen }) {
+  if (filtered.length === 0) return null
+  return (
+    <div
+      className="rounded-xl overflow-hidden shadow-2xl"
+      style={{
+        position: 'absolute',
+        top: 'calc(100% + 6px)',
+        left: 0,
+        right: 0,
+        background: 'rgba(12,12,22,0.98)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        backdropFilter: 'blur(20px)',
+        zIndex: 9999,
+      }}
+    >
+      {filtered.map((c, i) => (
+        <button
+          key={c.iso3}
+          className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors border-b"
+          style={{ borderColor: 'rgba(255,255,255,0.05)', background: i === 0 ? 'rgba(99,102,241,0.05)' : 'transparent' }}
+          onMouseDown={e => e.preventDefault()}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+          onMouseLeave={e => e.currentTarget.style.background = i === 0 ? 'rgba(99,102,241,0.05)' : 'transparent'}
+          onClick={() => { navigate(`/country/${c.iso3}`); setQuery(''); setOpen(false) }}
+        >
+          <span className="font-mono text-xs text-slate-600 w-8 shrink-0">{c.iso3}</span>
+          <span className="text-sm text-slate-200 flex-1 truncate">{c.name}</span>
+          {c.sovereign_risk_score != null && (
+            <span className="font-mono text-xs font-bold shrink-0"
+                  style={{ color: TIER_COLORS[c.risk_tier] || '#64748b' }}>
+              {c.sovereign_risk_score.toFixed(0)}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function SearchBar({ countries }) {
   const [query, setQuery] = useState('')
-  const [countries, setCountries] = useState([])
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   const navigate = useNavigate()
-
-  useEffect(() => {
-    api.countries().then(setCountries).catch(() => {})
-  }, [])
 
   useEffect(() => {
     function handler(e) {
@@ -182,7 +233,7 @@ function SearchBar() {
     : []
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative hidden md:block">
       <div className="relative">
         <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -205,42 +256,94 @@ function SearchBar() {
           onBlurCapture={e => { e.target.style.borderColor = 'rgba(255,255,255,0.08)'; e.target.style.background = 'rgba(255,255,255,0.04)' }}
         />
       </div>
-      {open && filtered.length > 0 && (
-        <div
-          className="rounded-xl overflow-hidden shadow-2xl"
-          style={{
-            position: 'fixed',
-            top: '46px',
-            right: '16px',
-            width: '280px',
-            background: 'rgba(12,12,22,0.98)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            backdropFilter: 'blur(20px)',
-            zIndex: 9999,
-          }}
-        >
-          {filtered.map((c, i) => (
-            <button
-              key={c.iso3}
-              className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors border-b"
-              style={{ borderColor: 'rgba(255,255,255,0.05)', background: i === 0 ? 'rgba(99,102,241,0.05)' : 'transparent' }}
-              onMouseDown={e => e.preventDefault()}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-              onMouseLeave={e => e.currentTarget.style.background = i === 0 ? 'rgba(99,102,241,0.05)' : 'transparent'}
-              onClick={() => { navigate(`/country/${c.iso3}`); setQuery(''); setOpen(false) }}
-            >
-              <span className="font-mono text-xs text-slate-600 w-8 shrink-0">{c.iso3}</span>
-              <span className="text-sm text-slate-200 flex-1 truncate">{c.name}</span>
-              {c.sovereign_risk_score != null && (
-                <span className="font-mono text-xs font-bold shrink-0"
-                      style={{ color: TIER_COLORS[c.risk_tier] || '#64748b' }}>
-                  {c.sovereign_risk_score.toFixed(0)}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+      {open && (
+        <SearchDropdown
+          countries={countries}
+          filtered={filtered}
+          navigate={navigate}
+          setQuery={setQuery}
+          setOpen={setOpen}
+        />
       )}
+    </div>
+  )
+}
+
+function MobileSearchOverlay({ countries, onClose }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const inputRef = useRef(null)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  const filtered = query.length > 0
+    ? countries.filter(c =>
+        c.name.toLowerCase().includes(query.toLowerCase()) ||
+        c.iso3.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 8)
+    : []
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex flex-col"
+      style={{ background: 'rgba(7,7,15,0.98)', backdropFilter: 'blur(20px)' }}
+    >
+      <div className="flex items-center gap-2 px-4 h-14" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <svg className="w-4 h-4 text-slate-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true) }}
+          onKeyDown={e => {
+            if (e.key === 'Escape') onClose()
+            if (e.key === 'Enter' && filtered.length > 0) {
+              navigate(`/country/${filtered[0].iso3}`)
+              onClose()
+            }
+          }}
+          placeholder="Search countries..."
+          className="flex-1 text-sm text-slate-300 placeholder-slate-600 outline-none bg-transparent"
+        />
+        <button
+          onClick={onClose}
+          className="shrink-0 px-3 py-1.5 text-sm text-slate-400 rounded-lg"
+          style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          Cancel
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {filtered.map((c, i) => (
+          <button
+            key={c.iso3}
+            className="w-full flex items-center gap-3 px-4 py-3 text-left border-b"
+            style={{ borderColor: 'rgba(255,255,255,0.05)', background: 'transparent', minHeight: '44px' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            onClick={() => { navigate(`/country/${c.iso3}`); onClose() }}
+          >
+            <span className="font-mono text-xs text-slate-600 w-8 shrink-0">{c.iso3}</span>
+            <span className="text-sm text-slate-200 flex-1 truncate">{c.name}</span>
+            {c.sovereign_risk_score != null && (
+              <span className="font-mono text-xs font-bold shrink-0"
+                    style={{ color: TIER_COLORS[c.risk_tier] || '#64748b' }}>
+                {c.sovereign_risk_score.toFixed(0)}
+              </span>
+            )}
+          </button>
+        ))}
+        {query.length > 0 && filtered.length === 0 && (
+          <p className="text-center text-sm text-slate-600 mt-12">No countries found</p>
+        )}
+        {query.length === 0 && (
+          <p className="text-center text-sm text-slate-600 mt-12">Type to search countries...</p>
+        )}
+      </div>
     </div>
   )
 }
@@ -268,10 +371,27 @@ function AlertBadge() {
 
 function Nav() {
   const location = useLocation()
-  const isGlobe = location.pathname === '/'
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [countries, setCountries] = useState([])
+
+  useEffect(() => {
+    api.countries().then(setCountries).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (drawerOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => { document.body.style.overflow = '' }
+  }, [drawerOpen])
+
+  const closeDrawer = () => setDrawerOpen(false)
 
   const navItem = (to, label, end = false) => (
-    <NavLink to={to} end={end}>
+    <NavLink to={to} end={end} onClick={closeDrawer}>
       {({ isActive }) => (
         <span
           className="px-3 py-1.5 text-sm font-medium rounded-lg transition-all"
@@ -287,54 +407,155 @@ function Nav() {
     </NavLink>
   )
 
-  return (
-    <nav
-      className="fixed top-0 left-0 right-0 z-50 flex items-center gap-1 px-4 h-12"
-      style={{
-        background: 'rgba(7,7,15,0.9)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-        backdropFilter: 'blur(20px)',
-      }}
-    >
-      {/* Logo */}
-      <NavLink to="/" className="mr-4 flex items-center gap-2 shrink-0">
-        <div className="w-6 h-6 rounded-md flex items-center justify-center"
-             style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)' }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="2" y1="12" x2="22" y2="12"/>
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-          </svg>
-        </div>
+  const drawerNavItem = (to, label, end = false) => (
+    <NavLink to={to} end={end} onClick={closeDrawer} className="block w-full">
+      {({ isActive }) => (
         <span
-          className="text-sm font-bold tracking-widest font-mono"
+          className="flex items-center px-4 text-base font-medium rounded-xl transition-all"
           style={{
-            background: 'linear-gradient(135deg, #818cf8 0%, #a78bfa 50%, #c4b5fd 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
+            minHeight: '44px',
+            color: isActive ? '#a78bfa' : '#94a3b8',
+            background: isActive ? 'rgba(167,139,250,0.1)' : 'transparent',
+            border: isActive ? '1px solid rgba(167,139,250,0.2)' : '1px solid transparent',
           }}
         >
-          SOVEREIGN
+          {label}
         </span>
-      </NavLink>
+      )}
+    </NavLink>
+  )
 
-      {/* Nav items */}
-      <div className="relative">
-        {navItem('/', 'Globe', true)}
-        <AlertBadge />
-      </div>
-      {navItem('/dashboard', 'Dashboard')}
-      {navItem('/markets', 'Markets')}
-      {navItem('/compare', 'Compare')}
-      {navItem('/analyst', 'Analyst')}
-      {navItem('/scenario', 'Scenario')}
+  return (
+    <>
+      <nav
+        className="fixed top-0 left-0 right-0 z-50 flex items-center gap-1 px-4 h-12"
+        style={{
+          background: 'rgba(7,7,15,0.9)',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          backdropFilter: 'blur(20px)',
+        }}
+      >
+        <NavLink to="/" className="mr-4 flex items-center gap-2 shrink-0">
+          <div className="w-6 h-6 rounded-md flex items-center justify-center"
+               style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+          </div>
+          <span
+            className="text-sm font-bold tracking-widest font-mono"
+            style={{
+              background: 'linear-gradient(135deg, #818cf8 0%, #a78bfa 50%, #c4b5fd 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
+            SOVEREIGN
+          </span>
+        </NavLink>
 
-      {/* Right side */}
-      <div className="ml-auto flex items-center gap-3">
-        <DataFreshness />
-        <SearchBar />
+        <div className="hidden md:flex items-center gap-1">
+          <div className="relative">
+            {navItem('/', 'Globe', true)}
+            <AlertBadge />
+          </div>
+          {navItem('/dashboard', 'Dashboard')}
+          {navItem('/markets', 'Markets')}
+          {navItem('/compare', 'Compare')}
+          {navItem('/analyst', 'Analyst')}
+          {navItem('/scenario', 'Scenario')}
+          {navItem('/portfolio', 'Portfolio')}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <div className="hidden sm:block">
+            <DataFreshness />
+          </div>
+          <SearchBar countries={countries} />
+
+          <button
+            className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg text-slate-400"
+            style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            onClick={() => setSearchOpen(true)}
+            aria-label="Search"
+          >
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+
+          <button
+            className="md:hidden flex flex-col items-center justify-center gap-1.5 w-9 h-9 rounded-lg text-slate-400"
+            style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            onClick={() => setDrawerOpen(o => !o)}
+            aria-label="Menu"
+          >
+            <span className="block w-4 h-0.5 rounded bg-current" />
+            <span className="block w-4 h-0.5 rounded bg-current" />
+            <span className="block w-4 h-0.5 rounded bg-current" />
+          </button>
+        </div>
+      </nav>
+
+      {drawerOpen && (
+        <div
+          className="fixed inset-0 z-40 md:hidden"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={closeDrawer}
+        />
+      )}
+
+      <div
+        className="fixed top-12 left-0 right-0 z-40 md:hidden flex flex-col overflow-hidden transition-all duration-200"
+        style={{
+          maxHeight: drawerOpen ? '100vh' : '0',
+          opacity: drawerOpen ? 1 : 0,
+          background: 'rgba(7,7,15,0.98)',
+          borderBottom: drawerOpen ? '1px solid rgba(255,255,255,0.06)' : 'none',
+          backdropFilter: 'blur(20px)',
+          pointerEvents: drawerOpen ? 'auto' : 'none',
+        }}
+      >
+        <div className="flex flex-col gap-1 px-3 py-3">
+          <div className="relative self-start">
+            <NavLink to="/" end onClick={closeDrawer} className="block">
+              {({ isActive }) => (
+                <span
+                  className="flex items-center px-4 text-base font-medium rounded-xl transition-all"
+                  style={{
+                    minHeight: '44px',
+                    color: isActive ? '#a78bfa' : '#94a3b8',
+                    background: isActive ? 'rgba(167,139,250,0.1)' : 'transparent',
+                    border: isActive ? '1px solid rgba(167,139,250,0.2)' : '1px solid transparent',
+                  }}
+                >
+                  Globe
+                </span>
+              )}
+            </NavLink>
+            <AlertBadge />
+          </div>
+          {drawerNavItem('/dashboard', 'Dashboard')}
+          {drawerNavItem('/markets', 'Markets')}
+          {drawerNavItem('/compare', 'Compare')}
+          {drawerNavItem('/analyst', 'Analyst')}
+          {drawerNavItem('/scenario', 'Scenario')}
+          {drawerNavItem('/portfolio', 'Portfolio')}
+        </div>
+        <div className="px-4 pb-4 pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <DataFreshness />
+        </div>
       </div>
-    </nav>
+
+      {searchOpen && (
+        <MobileSearchOverlay
+          countries={countries}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
+    </>
   )
 }
 
@@ -357,6 +578,7 @@ export default function App() {
             <Route path="/analyst" element={<Analyst />} />
             <Route path="/scenario" element={<Scenario />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/portfolio" element={<Portfolio />} />
           </Routes>
         </Suspense>
       </div>

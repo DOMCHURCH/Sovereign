@@ -116,3 +116,21 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 .fade-in { animation: fadeIn 0.3s ease forwards; }
+
+/* Mobile nav drawer slide-down */
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.drawer-open { animation: slideDown 0.2s ease forwards; }
+
+/* Floating analyst panel — desktop override via inline md: classes */
+@media (min-width: 768px) {
+  .analyst-panel {
+    left: auto !important;
+    right: 1.5rem !important;
+    width: 360px !important;
+    height: 480px !important;
+    bottom: 5rem !important;
+  }
+}

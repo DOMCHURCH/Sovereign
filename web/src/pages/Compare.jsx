@@ -46,6 +46,7 @@ export default function Compare() {
   const [loading, setLoading] = useState({})
   const [search, setSearch] = useState('')
   const [filterTier, setFilterTier] = useState('all')
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   useEffect(() => {
     api.countries().then(d => {
@@ -107,85 +108,141 @@ export default function Compare() {
 
   const tiers = ['all', 'severe', 'high', 'elevated', 'low']
 
-  return (
-    <div className="flex h-[calc(100vh-48px)] overflow-hidden" style={{ background: 'var(--bg)' }}>
-
-      {/* Left panel — country picker */}
-      <div className="w-60 flex flex-col border-r shrink-0" style={{ borderColor: '#1e1e2e', background: '#0d0d14' }}>
-        <div className="p-3 border-b space-y-2" style={{ borderColor: '#1e1e2e' }}>
+  const PickerPanel = () => (
+    <div className="flex flex-col h-full" style={{ background: '#0d0d14' }}>
+      <div className="p-3 border-b space-y-2" style={{ borderColor: '#1e1e2e' }}>
+        <div className="flex items-center justify-between">
           <div className="text-xs font-mono text-slate-500 uppercase tracking-widest">Countries</div>
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search..."
-            className="w-full text-xs px-2 py-1.5 rounded border bg-transparent text-slate-300 placeholder-slate-600 outline-none focus:border-indigo-500 transition-colors"
-            style={{ borderColor: '#2e2e42' }}
-          />
-          <div className="flex flex-wrap gap-1">
-            {tiers.map(t => (
-              <button
-                key={t}
-                onClick={() => setFilterTier(t)}
-                className="text-xs px-2 py-0.5 rounded-full border transition-colors capitalize"
-                style={{
-                  borderColor: filterTier === t ? (TIER_COLORS[t] || '#6366f1') : '#2e2e42',
-                  color: filterTier === t ? (TIER_COLORS[t] || '#6366f1') : '#64748b',
-                  background: filterTier === t ? `${TIER_COLORS[t] || '#6366f1'}15` : 'transparent',
-                }}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+          <button
+            onClick={() => setPickerOpen(false)}
+            className="lg:hidden text-slate-500 hover:text-slate-300 text-xl leading-none p-1"
+          >
+            ×
+          </button>
         </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {filtered.map(c => {
-            const isSelected = selected.includes(c.iso3)
-            const colorIdx = selected.indexOf(c.iso3)
-            return (
-              <button
-                key={c.iso3}
-                onClick={() => toggle(c.iso3)}
-                disabled={!isSelected && selected.length >= 8}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left border-b hover:bg-white/5 transition-colors disabled:opacity-30"
-                style={{ borderColor: '#1e1e2e' }}
-              >
-                <span className="w-3 h-3 rounded-full shrink-0 border transition-all"
-                      style={{
-                        background: isSelected ? COLORS[colorIdx] : 'transparent',
-                        borderColor: isSelected ? COLORS[colorIdx] : '#2e2e42',
-                      }} />
-                <span className="font-mono text-xs text-slate-600 w-7">{c.iso3}</span>
-                <span className="text-xs text-slate-300 flex-1 truncate">{c.name}</span>
-                <span className="font-mono text-xs font-bold shrink-0"
-                      style={{ color: TIER_COLORS[c.risk_tier] || '#64748b' }}>
-                  {c.sovereign_risk_score?.toFixed(0)}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="p-3 border-t text-xs text-slate-600 font-mono" style={{ borderColor: '#1e1e2e' }}>
-          {selected.length}/8 selected
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search..."
+          className="w-full text-xs px-2 py-1.5 rounded border bg-transparent text-slate-300 placeholder-slate-600 outline-none focus:border-indigo-500 transition-colors"
+          style={{ borderColor: '#2e2e42' }}
+        />
+        <div className="flex flex-wrap gap-1">
+          {tiers.map(t => (
+            <button
+              key={t}
+              onClick={() => setFilterTier(t)}
+              className="text-xs px-2 py-0.5 rounded-full border transition-colors capitalize"
+              style={{
+                borderColor: filterTier === t ? (TIER_COLORS[t] || '#6366f1') : '#2e2e42',
+                color: filterTier === t ? (TIER_COLORS[t] || '#6366f1') : '#64748b',
+                background: filterTier === t ? `${TIER_COLORS[t] || '#6366f1'}15` : 'transparent',
+              }}
+            >
+              {t}
+            </button>
+          ))}
         </div>
       </div>
 
+      <div className="flex-1 overflow-y-auto">
+        {filtered.map(c => {
+          const isSelected = selected.includes(c.iso3)
+          const colorIdx = selected.indexOf(c.iso3)
+          return (
+            <button
+              key={c.iso3}
+              onClick={() => toggle(c.iso3)}
+              disabled={!isSelected && selected.length >= 8}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left border-b hover:bg-white/5 transition-colors disabled:opacity-30"
+              style={{ borderColor: '#1e1e2e' }}
+            >
+              <span className="w-3 h-3 rounded-full shrink-0 border transition-all"
+                    style={{
+                      background: isSelected ? COLORS[colorIdx] : 'transparent',
+                      borderColor: isSelected ? COLORS[colorIdx] : '#2e2e42',
+                    }} />
+              <span className="font-mono text-xs text-slate-600 w-7">{c.iso3}</span>
+              <span className="text-xs text-slate-300 flex-1 truncate">{c.name}</span>
+              <span className="font-mono text-xs font-bold shrink-0"
+                    style={{ color: TIER_COLORS[c.risk_tier] || '#64748b' }}>
+                {c.sovereign_risk_score?.toFixed(0)}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="p-3 border-t text-xs text-slate-600 font-mono" style={{ borderColor: '#1e1e2e' }}>
+        {selected.length}/8 selected
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="flex h-[calc(100vh-48px)] overflow-hidden" style={{ background: 'var(--bg)' }}>
+
+      {/* Mobile picker backdrop */}
+      {pickerOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/60 lg:hidden"
+          onClick={() => setPickerOpen(false)}
+        />
+      )}
+
+      {/* Left panel — desktop always visible as sidebar */}
+      <div className="hidden lg:flex lg:w-60 flex-col border-r shrink-0" style={{ borderColor: '#1e1e2e' }}>
+        <PickerPanel />
+      </div>
+
+      {/* Mobile: collapsible picker drawer from top */}
+      {pickerOpen && (
+        <div
+          className="fixed top-[48px] left-0 right-0 z-30 lg:hidden border-b shadow-2xl"
+          style={{ borderColor: '#1e1e2e', maxHeight: '60vh', overflowY: 'auto', background: '#0d0d14' }}
+        >
+          <PickerPanel />
+        </div>
+      )}
+
       {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {/* Mobile picker toggle button */}
+        <div className="lg:hidden px-3 py-2 border-b" style={{ borderColor: '#1e1e2e', background: '#0a0a0f' }}>
+          <button
+            onClick={() => setPickerOpen(p => !p)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm text-slate-300 hover:text-slate-100 transition-colors"
+            style={{ borderColor: '#2e2e42', background: '#12121a', minHeight: 44 }}
+          >
+            <span className="flex items-center gap-2">
+              <span className="text-xs font-mono text-slate-500 uppercase tracking-widest">Select Countries</span>
+              {selected.length > 0 && (
+                <span className="flex gap-1">
+                  {selectedCountries.slice(0, 4).map((c, i) => (
+                    <span key={c.iso3} className="w-2 h-2 rounded-full" style={{ background: COLORS[i] }} />
+                  ))}
+                </span>
+              )}
+            </span>
+            <span className="text-xs font-mono text-slate-500">{selected.length}/8 {pickerOpen ? '▲' : '▼'}</span>
+          </button>
+        </div>
+
         {selected.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-6 md:px-8">
             <div className="w-16 h-16 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mb-4">
               <span className="text-2xl">📊</span>
             </div>
             <h3 className="text-slate-300 font-semibold mb-2">Country Risk Comparison</h3>
             <p className="text-slate-500 text-sm max-w-sm">
-              Select up to 8 countries from the left panel to compare 90-day risk trajectories side by side.
+              Select up to 8 countries from the panel to compare 90-day risk trajectories side by side.
+            </p>
+            <p className="lg:hidden text-xs text-slate-600 mt-3">
+              Tap <span className="text-slate-500">Select Countries</span> above to get started.
             </p>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-5">
             {/* Header */}
             <div className="flex items-start justify-between">
               <div>
@@ -216,7 +273,7 @@ export default function Compare() {
             </div>
 
             {/* Stats row */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <StatCard label="Avg Risk Score" value={avgScore} sub="across selected countries" color="#e2e8f0" />
               <StatCard label="Highest Score" value={maxScore}
                 sub={selectedCountries.find(c => c.sovereign_risk_score?.toFixed(1) === maxScore)?.name}
@@ -225,9 +282,9 @@ export default function Compare() {
             </div>
 
             {/* Chart */}
-            <div className="glass-card rounded-xl p-5">
+            <div className="glass-card rounded-xl p-4 md:p-5">
               <div className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-4">Risk Score Over Time</div>
-              <ResponsiveContainer width="100%" height={320}>
+              <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a2a" />
                   <XAxis
@@ -265,7 +322,7 @@ export default function Compare() {
             </div>
 
             {/* Country detail cards */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {selectedCountries.map((c, i) => (
                 <div key={c.iso3}
                      className="glass-card glass-card-hover rounded-xl p-4 cursor-pointer transition-colors"

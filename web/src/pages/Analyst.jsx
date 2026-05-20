@@ -63,6 +63,7 @@ export default function Analyst() {
   const [streaming, setStreaming] = useState(false)
   const [countrySearch, setCountrySearch] = useState('')
   const [showCountryPicker, setShowCountryPicker] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -99,6 +100,7 @@ export default function Analyst() {
     setFocusCountry(c || null)
     setShowCountryPicker(false)
     setCountrySearch('')
+    setSidebarOpen(false)
     if (c) {
       setMessages(prev => [
         ...prev,
@@ -173,92 +175,132 @@ export default function Analyst() {
     }
   }
 
+  const SidebarContent = () => (
+    <>
+      <div className="p-4 border-b" style={{ borderColor: '#1e1e2e' }}>
+        <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase mb-3">Country Focus</h2>
+
+        {focusCountry ? (
+          <div className="rounded-lg border p-3" style={{ borderColor: '#2e2e42', background: '#12121a' }}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-200 truncate">{focusCountry.name}</div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs px-1.5 py-0.5 rounded font-mono"
+                        style={{ background: `${TIER_COLORS[focusCountry.risk_tier]}20`, color: TIER_COLORS[focusCountry.risk_tier] }}>
+                    {focusCountry.risk_tier?.toUpperCase()}
+                  </span>
+                  <span className="font-mono text-sm font-bold"
+                        style={{ color: TIER_COLORS[focusCountry.risk_tier] || '#64748b' }}>
+                    {focusCountry.sovereign_risk_score?.toFixed(1)}
+                  </span>
+                </div>
+              </div>
+              <button onClick={clearCountry} className="text-slate-600 hover:text-slate-400 text-lg leading-none mt-0.5">×</button>
+            </div>
+            <button
+              onClick={() => navigate(`/country/${focusCountry.iso3}`)}
+              className="mt-2 w-full text-xs text-indigo-400 hover:text-indigo-300 text-left transition-colors"
+            >
+              View full analysis →
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowCountryPicker(p => !p)}
+            className="w-full text-xs px-3 py-2 rounded-lg border border-dashed text-slate-500 hover:text-slate-300 hover:border-slate-500 transition-colors"
+            style={{ borderColor: '#2e2e42' }}
+          >
+            + Focus on a country
+          </button>
+        )}
+
+        {showCountryPicker && (
+          <div className="mt-2">
+            <input
+              value={countrySearch}
+              onChange={e => setCountrySearch(e.target.value)}
+              placeholder="Search..."
+              autoFocus
+              className="w-full text-xs px-2 py-1.5 rounded border bg-transparent text-slate-300 placeholder-slate-600 outline-none"
+              style={{ borderColor: '#2e2e42' }}
+            />
+            <div className="mt-1 max-h-48 overflow-y-auto space-y-0.5">
+              {filteredCountries.slice(0, 20).map(c => (
+                <CountryCard key={c.iso3} c={c} onClick={selectCountry} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 flex-1 overflow-y-auto">
+        <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase mb-3">Suggested</h2>
+        <div className="space-y-2">
+          {SUGGESTED.map(q => (
+            <button
+              key={q}
+              onClick={() => { send(q); setSidebarOpen(false) }}
+              disabled={streaming}
+              className="w-full text-left text-xs text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg border hover:bg-white/5 transition-colors disabled:opacity-40"
+              style={{ borderColor: '#1e1e2e' }}
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+
   return (
     <div className="flex h-[calc(100vh-48px)] overflow-hidden" style={{ background: 'var(--bg)' }}>
-      {/* Left sidebar */}
-      <div className="w-64 flex flex-col border-r shrink-0" style={{ borderColor: '#1e1e2e', background: '#0d0d14' }}>
-        <div className="p-4 border-b" style={{ borderColor: '#1e1e2e' }}>
-          <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase mb-3">Country Focus</h2>
 
-          {focusCountry ? (
-            <div className="rounded-lg border p-3" style={{ borderColor: '#2e2e42', background: '#12121a' }}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-slate-200 truncate">{focusCountry.name}</div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs px-1.5 py-0.5 rounded font-mono"
-                          style={{ background: `${TIER_COLORS[focusCountry.risk_tier]}20`, color: TIER_COLORS[focusCountry.risk_tier] }}>
-                      {focusCountry.risk_tier?.toUpperCase()}
-                    </span>
-                    <span className="font-mono text-sm font-bold"
-                          style={{ color: TIER_COLORS[focusCountry.risk_tier] || '#64748b' }}>
-                      {focusCountry.sovereign_risk_score?.toFixed(1)}
-                    </span>
-                  </div>
-                </div>
-                <button onClick={clearCountry} className="text-slate-600 hover:text-slate-400 text-lg leading-none mt-0.5">×</button>
-              </div>
-              <button
-                onClick={() => navigate(`/country/${focusCountry.iso3}`)}
-                className="mt-2 w-full text-xs text-indigo-400 hover:text-indigo-300 text-left transition-colors"
-              >
-                View full analysis →
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowCountryPicker(p => !p)}
-              className="w-full text-xs px-3 py-2 rounded-lg border border-dashed text-slate-500 hover:text-slate-300 hover:border-slate-500 transition-colors"
-              style={{ borderColor: '#2e2e42' }}
-            >
-              + Focus on a country
-            </button>
-          )}
+      {/* Mobile sidebar backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/60 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
-          {showCountryPicker && (
-            <div className="mt-2">
-              <input
-                value={countrySearch}
-                onChange={e => setCountrySearch(e.target.value)}
-                placeholder="Search..."
-                autoFocus
-                className="w-full text-xs px-2 py-1.5 rounded border bg-transparent text-slate-300 placeholder-slate-600 outline-none"
-                style={{ borderColor: '#2e2e42' }}
-              />
-              <div className="mt-1 max-h-48 overflow-y-auto space-y-0.5">
-                {filteredCountries.slice(0, 20).map(c => (
-                  <CountryCard key={c.iso3} c={c} onClick={selectCountry} />
-                ))}
-              </div>
-            </div>
-          )}
+      {/* Left sidebar — desktop always visible, mobile slide-in drawer */}
+      <div
+        className={`
+          fixed top-[48px] left-0 bottom-0 z-30 w-64 flex flex-col border-r shrink-0 transition-transform duration-200
+          lg:static lg:translate-x-0 lg:z-auto lg:top-auto lg:bottom-auto lg:flex
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+        style={{ borderColor: '#1e1e2e', background: '#0d0d14' }}
+      >
+        {/* Mobile close button */}
+        <div className="flex items-center justify-between px-4 pt-3 pb-0 lg:hidden">
+          <span className="text-xs font-mono text-slate-500 uppercase tracking-widest">Focus</span>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="text-slate-500 hover:text-slate-300 text-xl leading-none p-1"
+          >
+            ×
+          </button>
         </div>
-
-        {/* Suggested questions */}
-        <div className="p-4 flex-1 overflow-y-auto">
-          <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase mb-3">Suggested</h2>
-          <div className="space-y-2">
-            {SUGGESTED.map(q => (
-              <button
-                key={q}
-                onClick={() => send(q)}
-                disabled={streaming}
-                className="w-full text-left text-xs text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg border hover:bg-white/5 transition-colors disabled:opacity-40"
-                style={{ borderColor: '#1e1e2e' }}
-              >
-                {q}
-              </button>
-            ))}
-          </div>
-        </div>
+        <SidebarContent />
       </div>
 
       {/* Chat area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Header */}
-        <div className="px-6 py-3 border-b flex items-center gap-3" style={{ borderColor: '#1e1e2e', background: '#0a0a0f' }}>
-          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-sm font-mono text-slate-400">
+        <div className="px-3 md:px-6 py-3 border-b flex items-center gap-3" style={{ borderColor: '#1e1e2e', background: '#0a0a0f' }}>
+          {/* Mobile sidebar toggle */}
+          <button
+            onClick={() => setSidebarOpen(p => !p)}
+            className="lg:hidden flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors shrink-0"
+            style={{ borderColor: '#2e2e42' }}
+          >
+            ⚙ Focus
+          </button>
+
+          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
+          <span className="text-sm font-mono text-slate-400 truncate">
             Sovereign AI Analyst
             {focusCountry && (
               <span className="text-indigo-400"> · {focusCountry.name}</span>
@@ -267,7 +309,7 @@ export default function Analyst() {
           {messages.length > 0 && (
             <button
               onClick={() => setMessages([])}
-              className="ml-auto text-xs text-slate-600 hover:text-slate-400 transition-colors"
+              className="ml-auto text-xs text-slate-600 hover:text-slate-400 transition-colors shrink-0"
             >
               Clear chat
             </button>
@@ -275,9 +317,9 @@ export default function Analyst() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-3 md:px-6 py-4 space-y-4">
           {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-center">
+            <div className="flex flex-col items-center justify-center h-full text-center px-4">
               <div className="w-16 h-16 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mb-4">
                 <span className="text-2xl">🌐</span>
               </div>
@@ -285,6 +327,10 @@ export default function Analyst() {
               <p className="text-slate-500 text-sm max-w-sm">
                 Ask me anything about geopolitical risk, country stability, or portfolio exposure.
                 {!focusCountry && ' Focus on a specific country for targeted analysis.'}
+              </p>
+              {/* Mobile suggested queries hint */}
+              <p className="lg:hidden text-xs text-slate-600 mt-3">
+                Tap <span className="text-slate-500">⚙ Focus</span> to set a country or browse suggested queries.
               </p>
             </div>
           )}
@@ -295,8 +341,8 @@ export default function Analyst() {
         </div>
 
         {/* Input */}
-        <div className="px-6 py-4 border-t" style={{ borderColor: '#1e1e2e', background: '#0a0a0f' }}>
-          <div className="flex gap-3 items-end">
+        <div className="px-3 md:px-6 py-3 md:py-4 border-t" style={{ borderColor: '#1e1e2e', background: '#0a0a0f' }}>
+          <div className="flex gap-2 md:gap-3 items-end">
             <textarea
               ref={inputRef}
               value={input}
@@ -305,23 +351,21 @@ export default function Analyst() {
               disabled={streaming}
               placeholder={focusCountry ? `Ask about ${focusCountry.name}...` : 'Ask about geopolitical risk...'}
               rows={1}
-              className="flex-1 text-sm px-4 py-3 rounded-xl border bg-transparent text-slate-200 placeholder-slate-600 outline-none focus:border-indigo-500 transition-colors resize-none disabled:opacity-50"
-              style={{ borderColor: '#2e2e42', minHeight: 48, maxHeight: 120 }}
+              className="flex-1 text-sm px-3 md:px-4 py-3 rounded-xl border bg-transparent text-slate-200 placeholder-slate-600 outline-none focus:border-indigo-500 transition-colors resize-none disabled:opacity-50"
+              style={{ borderColor: '#2e2e42', minHeight: 44, maxHeight: 120 }}
             />
             <button
               onClick={() => send()}
               disabled={!input.trim() || streaming}
-              className="px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors shrink-0"
-              style={{ height: 48 }}
+              className="px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors shrink-0 flex items-center justify-center"
+              style={{ height: 44, minWidth: 44 }}
             >
               {streaming ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                </span>
+                <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
               ) : '↑'}
             </button>
           </div>
-          <p className="text-xs text-slate-700 mt-2">Enter to send · Shift+Enter for new line</p>
+          <p className="text-xs text-slate-700 mt-2 hidden sm:block">Enter to send · Shift+Enter for new line</p>
         </div>
       </div>
     </div>

@@ -55,11 +55,11 @@ const SUGGESTED_QUERIES = [
 
 // ─── Shimmer placeholder ──────────────────────────────────────────────────────
 
-function ShimmerRow({ height = 40, className = '' }) {
+function ShimmerRow({ height = 44, className = '' }) {
   return (
     <div
       className={`shimmer rounded-lg ${className}`}
-      style={{ height, minWidth: 0 }}
+      style={{ height, minWidth: 0, minHeight: 44 }}
     />
   )
 }
@@ -70,8 +70,8 @@ function StatCard({ label, value, sub, valueColor, badge, onClick, loading, acce
   return (
     <button
       onClick={onClick}
-      className="glass-card glass-card-hover card-accent-top flex flex-col items-start p-5 w-full text-left transition-all group"
-      style={{ cursor: onClick ? 'pointer' : 'default' }}
+      className="glass-card glass-card-hover card-accent-top flex flex-col items-start p-4 md:p-5 w-full text-left transition-all group"
+      style={{ cursor: onClick ? 'pointer' : 'default', minHeight: 44 }}
     >
       <div className="flex items-center justify-between w-full mb-2">
         <span className="text-xs font-mono text-slate-500 uppercase tracking-widest">{label}</span>
@@ -88,7 +88,7 @@ function StatCard({ label, value, sub, valueColor, badge, onClick, loading, acce
         <div className="shimmer h-8 w-24 rounded" />
       ) : (
         <div
-          className="text-3xl font-mono font-bold leading-none"
+          className="text-2xl md:text-3xl font-mono font-bold leading-none"
           style={{ color: valueColor || 'var(--text)' }}
         >
           {value}
@@ -119,7 +119,7 @@ function GTILeaderboard({ data, loading, navigate }) {
   const maxScore = top10[0]?.gti ?? 100
 
   return (
-    <div className="glass-card card-accent-top p-5 flex flex-col h-full">
+    <div className="glass-card card-accent-top p-4 md:p-5 flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xs font-mono text-slate-400 uppercase tracking-widest">GTI Leaderboard</h2>
         <span className="text-xs text-slate-600 font-mono">Top 10 Countries</span>
@@ -128,7 +128,7 @@ function GTILeaderboard({ data, loading, navigate }) {
       <div className="flex flex-col gap-1.5 flex-1">
         {loading
           ? Array.from({ length: 10 }).map((_, i) => (
-              <ShimmerRow key={i} height={32} className="w-full" />
+              <ShimmerRow key={i} height={44} className="w-full" />
             ))
           : top10.map((country, i) => {
               const tier = country.tier || 'low'
@@ -139,8 +139,8 @@ function GTILeaderboard({ data, loading, navigate }) {
                 <button
                   key={country.iso3 || i}
                   onClick={() => navigate(`/country/${country.iso3}`)}
-                  className="w-full flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors text-left group"
-                  style={{ background: 'transparent' }}
+                  className="w-full flex items-center gap-2 sm:gap-3 px-2 py-1.5 rounded-lg transition-colors text-left group"
+                  style={{ background: 'transparent', minHeight: 44 }}
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
@@ -151,7 +151,7 @@ function GTILeaderboard({ data, loading, navigate }) {
                   </span>
 
                   {/* Name */}
-                  <span className="text-sm text-slate-300 w-24 shrink-0 truncate group-hover:text-slate-100 transition-colors">
+                  <span className="text-sm text-slate-300 w-20 sm:w-24 shrink-0 truncate group-hover:text-slate-100 transition-colors">
                     {country.name || country.iso3}
                   </span>
 
@@ -211,7 +211,7 @@ function AlertsFeed({ alerts, loading, onAcknowledge, countries }) {
   const visible = alerts.filter(a => !a.acknowledged).slice(0, 8)
 
   return (
-    <div className="glass-card card-accent-top p-5 flex flex-col h-full">
+    <div className="glass-card card-accent-top p-4 md:p-5 flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xs font-mono text-slate-400 uppercase tracking-widest">Active Alerts</h2>
         {!loading && visible.length > 0 && (
@@ -298,7 +298,7 @@ function AlertsFeed({ alerts, loading, onAcknowledge, countries }) {
 function NewsFeed({ articles, loading }) {
   if (loading) {
     return (
-      <div className="glass-card card-accent-top p-5 flex flex-col h-full">
+      <div className="glass-card card-accent-top p-4 md:p-5 flex flex-col h-full">
         <h2 className="text-xs font-mono text-slate-400 uppercase tracking-widest mb-4">News Intelligence</h2>
         <div className="flex flex-col gap-2">
           {Array.from({ length: 8 }).map((_, i) => (
@@ -312,7 +312,7 @@ function NewsFeed({ articles, loading }) {
   const items = articles.slice(0, 12)
 
   return (
-    <div className="glass-card card-accent-top p-5 flex flex-col h-full">
+    <div className="glass-card card-accent-top p-4 md:p-5 flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xs font-mono text-slate-400 uppercase tracking-widest">News Intelligence</h2>
         <span className="text-xs text-slate-600 font-mono">{items.length} articles</span>
@@ -411,7 +411,7 @@ function MarketMovers({ snapshot, loading }) {
     .slice(0, 8)
 
   return (
-    <div className="glass-card card-accent-top p-5 flex flex-col h-full">
+    <div className="glass-card card-accent-top p-4 md:p-5 flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xs font-mono text-slate-400 uppercase tracking-widest">Market Movers</h2>
         <div className="flex items-center gap-1.5">
@@ -423,7 +423,7 @@ function MarketMovers({ snapshot, loading }) {
       <div className="flex flex-col gap-1 flex-1">
         {loading ? (
           Array.from({ length: 8 }).map((_, i) => (
-            <ShimmerRow key={i} height={36} className="w-full" />
+            <ShimmerRow key={i} height={44} className="w-full" />
           ))
         ) : sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 py-10">
@@ -441,6 +441,7 @@ function MarketMovers({ snapshot, loading }) {
                 className="flex items-center gap-2 px-2 py-2 rounded-lg"
                 style={{
                   background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
+                  minHeight: 44,
                 }}
               >
                 {/* Flag + Ticker */}
@@ -478,7 +479,7 @@ function MarketMovers({ snapshot, loading }) {
 function AnalystCTA({ navigate }) {
   return (
     <div
-      className="rounded-xl p-6 flex items-center gap-8"
+      className="rounded-xl px-4 py-5 md:px-6 md:py-6 flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-8"
       style={{
         background: 'linear-gradient(135deg, rgba(49,46,129,0.6) 0%, rgba(67,56,202,0.4) 50%, rgba(109,40,217,0.35) 100%)',
         border: '1px solid rgba(99,102,241,0.3)',
@@ -492,7 +493,7 @@ function AnalystCTA({ navigate }) {
       </div>
 
       {/* Center: Suggested queries */}
-      <div className="flex-1 flex items-center gap-3 flex-wrap justify-center">
+      <div className="flex-1 flex items-center gap-3 flex-wrap w-full md:w-auto">
         {SUGGESTED_QUERIES.map((q, i) => (
           <button
             key={i}
@@ -521,7 +522,7 @@ function AnalystCTA({ navigate }) {
       {/* Right: CTA button */}
       <button
         onClick={() => navigate('/analyst')}
-        className="shrink-0 px-6 py-3 rounded-xl font-semibold text-sm transition-all"
+        className="shrink-0 w-full md:w-auto px-6 py-3 rounded-xl font-semibold text-sm transition-all"
         style={{
           background: 'linear-gradient(135deg, #6366f1, #a78bfa)',
           color: '#fff',
@@ -614,13 +615,13 @@ export default function Dashboard() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="fade-in max-w-screen-xl mx-auto px-6 py-6 space-y-6" style={{ minWidth: 0 }}>
+    <div className="fade-in max-w-screen-xl mx-auto px-3 py-4 md:px-6 md:py-6 space-y-6" style={{ minWidth: 0 }}>
 
       {/* ── Page header ── */}
-      <div className="flex items-end justify-between">
+      <div className="flex items-end justify-between gap-3">
         <div>
           <h1
-            className="text-xl font-bold tracking-tight"
+            className="text-lg md:text-xl font-bold tracking-tight"
             style={{
               background: 'linear-gradient(135deg, #e2e8f0 0%, #a78bfa 100%)',
               WebkitBackgroundClip: 'text',
@@ -633,14 +634,15 @@ export default function Dashboard() {
             Geopolitical risk intelligence · {new Date().toUTCString().slice(0, 25)} UTC
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className="w-2 h-2 rounded-full bg-green-400" style={{ boxShadow: '0 0 8px rgba(74,222,128,0.8)' }} />
-          <span className="text-xs text-green-400 font-mono">LIVE MONITORING</span>
+          <span className="text-xs text-green-400 font-mono hidden sm:inline">LIVE MONITORING</span>
+          <span className="text-xs text-green-400 font-mono sm:hidden">LIVE</span>
         </div>
       </div>
 
-      {/* ── Stat bar (4 cards) ── */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* ── Stat bar (2 cols mobile/tablet, 4 cols desktop) ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <StatCard
           label="Active Alerts"
           value={loading ? '—' : criticalAndWarning.length}
@@ -685,7 +687,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Middle row: GTI Leaderboard + Alert Feed ── */}
-      <div className="grid grid-cols-2 gap-4" style={{ alignItems: 'start' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ alignItems: 'start' }}>
         <GTILeaderboard
           data={gtiData}
           loading={loading}
@@ -700,7 +702,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Bottom row: News + Market Movers ── */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: '2fr 1fr', alignItems: 'start' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ alignItems: 'start' }}>
         <NewsFeed articles={news} loading={loading} />
         <MarketMovers snapshot={snapshot} loading={loading} />
       </div>

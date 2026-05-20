@@ -59,6 +59,20 @@ async def _startup_ingest():
 # All API routes live under /api
 router = APIRouter(prefix="/api")
 
+# ── Simple in-process TTL cache ───────────────────────────────────────────────
+import time as _time_mod
+
+_CACHE: dict[str, tuple[float, object]] = {}
+
+def _cached(key: str, ttl: int, fn):
+    """Return cached value if fresh, else call fn(), store, and return."""
+    entry = _CACHE.get(key)
+    if entry and (_time_mod.time() - entry[0]) < ttl:
+        return entry[1]
+    result = fn()
+    _CACHE[key] = (_time_mod.time(), result)
+    return result
+
 
 # ── Pydantic models ──────────────────────────────────────────────────────────
 
@@ -159,24 +173,23 @@ def health():
 
 @router.get("/countries", response_model=list[CountrySummary])
 def list_countries():
-    conn = get_conn()
-    countries = hydrate_countries(conn)
-    result = []
-    for c in countries:
-        sub = _get_sub_scores(c.iso3)
-        delta = sub.get("delta_7d") if sub else None
-        result.append(CountrySummary(
-            iso3=c.iso3,
-            name=c.name,
-            region=c.region,
-            sovereign_risk_score=c.sovereign_risk_score,
-            risk_tier=c.risk_tier,
-            risk_delta_7d=delta,
-            top_risk_drivers=_top_drivers(sub),
-            is_primary_sanctions_target=c.is_primary_sanctions_target,
-        ))
-    result.sort(key=lambda x: (x.sovereign_risk_score or 0), reverse=True)
-    return result
+    def _build():
+        conn = get_conn()
+        countries = hydrate_countries(conn)
+        result = []
+        for c in countries:
+            sub = _get_sub_scores(c.iso3)
+            delta = sub.get("delta_7d") if sub else None
+            result.append(CountrySummary(
+                iso3=c.iso3, name=c.name, region=c.region,
+                sovereign_risk_score=c.sovereign_risk_score,
+                risk_tier=c.risk_tier, risk_delta_7d=delta,
+                top_risk_drivers=_top_drivers(sub),
+                is_primary_sanctions_target=c.is_primary_sanctions_target,
+            ))
+        result.sort(key=lambda x: (x.sovereign_risk_score or 0), reverse=True)
+        return result
+    return _cached("countries_list", 300, _build)
 
 
 @router.get("/countries/{iso3}", response_model=CountryDetail)
@@ -374,29 +387,27 @@ def get_conflicts():
 @router.get("/gti")
 def get_gti():
     """Geopolitical Tension Index — fast-moving composite per country."""
-    conn = get_conn()
-    try:
-        rows = conn.execute(
-            "SELECT country_iso3, gti, tier, components_json, computed_at FROM gti_scores ORDER BY gti DESC"
-        ).fetchall()
-        if rows:
-            return [
-                {
-                    "iso3": r[0],
-                    "gti": r[1],
-                    "tier": r[2],
-                    "components": json.loads(r[3]) if r[3] else {},
-                    "name": COUNTRY_METADATA.get(r[0], (r[0], ""))[0],
-                    "computed_at": r[4].isoformat() if hasattr(r[4], "isoformat") else str(r[4]),
-                }
-                for r in rows
-            ]
-    except Exception:
-        pass
-    # Compute on-demand if table not yet populated
-    from analytics.gti import run as gti_run
-    scores = gti_run()
-    return list(scores.values())
+    def _build():
+        conn = get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT country_iso3, gti, tier, components_json, computed_at FROM gti_scores ORDER BY gti DESC"
+            ).fetchall()
+            if rows:
+                return [
+                    {
+                        "iso3": r[0], "gti": r[1], "tier": r[2],
+                        "components": json.loads(r[3]) if r[3] else {},
+                        "name": COUNTRY_METADATA.get(r[0], (r[0], ""))[0],
+                        "computed_at": r[4].isoformat() if hasattr(r[4], "isoformat") else str(r[4]),
+                    }
+                    for r in rows
+                ]
+        except Exception:
+            pass
+        from analytics.gti import run as gti_run
+        return list(gti_run().values())
+    return _cached("gti_scores", 900, _build)
 
 
 @router.get("/news/feed")
@@ -537,35 +548,37 @@ def _live_news_feed(iso3: str | None = None, limit: int = 50) -> list[dict]:
 @router.get("/market/snapshot")
 def get_market_snapshot():
     """Live market snapshot via yfinance — equity ETFs + commodities."""
-    try:
-        import yfinance as yf
-        from ingest.markets import COUNTRY_ETFS, COMMODITIES
-        all_tickers = list(COUNTRY_ETFS.values()) + list(COMMODITIES.values())
-        data = yf.download(all_tickers, period="5d", auto_adjust=True, progress=False)
-        close = data["Close"] if "Close" in data.columns else data
-        equities = []
-        commodities = []
-        ticker_to_iso3 = {v: k for k, v in COUNTRY_ETFS.items()}
-        for ticker in all_tickers:
-            if ticker not in close.columns:
-                continue
-            prices = close[ticker].dropna()
-            if len(prices) < 2:
-                continue
-            latest = float(prices.iloc[-1])
-            prev   = float(prices.iloc[-2])
-            chg    = (latest - prev) / prev if prev else 0
-            entry  = {"ticker": ticker, "price": round(latest, 2), "change_pct": round(chg * 100, 2)}
-            iso3 = ticker_to_iso3.get(ticker)
-            if iso3:
-                entry["iso3"] = iso3
-                entry["country"] = COUNTRY_METADATA.get(iso3, (iso3, ""))[0]
-                equities.append(entry)
-            else:
-                commodities.append(entry)
-        return {"equities": equities, "commodities": commodities}
-    except Exception as e:
-        return {"error": str(e)}
+    def _build():
+        try:
+            import yfinance as yf
+            from ingest.markets import COUNTRY_ETFS, COMMODITIES
+            all_tickers = list(COUNTRY_ETFS.values()) + list(COMMODITIES.values())
+            data = yf.download(all_tickers, period="5d", auto_adjust=True, progress=False)
+            close = data["Close"] if "Close" in data.columns else data
+            equities = []
+            commodities = []
+            ticker_to_iso3 = {v: k for k, v in COUNTRY_ETFS.items()}
+            for ticker in all_tickers:
+                if ticker not in close.columns:
+                    continue
+                prices = close[ticker].dropna()
+                if len(prices) < 2:
+                    continue
+                latest = float(prices.iloc[-1])
+                prev   = float(prices.iloc[-2])
+                chg    = (latest - prev) / prev if prev else 0
+                entry  = {"ticker": ticker, "price": round(latest, 2), "change_pct": round(chg * 100, 2)}
+                iso3 = ticker_to_iso3.get(ticker)
+                if iso3:
+                    entry["iso3"] = iso3
+                    entry["country"] = COUNTRY_METADATA.get(iso3, (iso3, ""))[0]
+                    equities.append(entry)
+                else:
+                    commodities.append(entry)
+            return {"equities": equities, "commodities": commodities}
+        except Exception as e:
+            return {"error": str(e)}
+    return _cached("market_snapshot", 300, _build)
 
 
 # ── Conflict intelligence pipeline ────────────────────────────────────────────
@@ -1017,23 +1030,25 @@ def get_portfolio():
 
 @router.get("/portfolio/impact")
 def get_portfolio_impact():
-    conn = get_conn()
-    risk_rows = conn.execute(
-        """
-        SELECT sr.country_iso3, CAST(json_extract(sr.sub_scores_json, '$.delta_7d') AS DOUBLE) AS delta_7d
-        FROM sovereign_risk sr
-        INNER JOIN (SELECT country_iso3, MAX(computed_at) max_at FROM sovereign_risk GROUP BY country_iso3) l
-            ON sr.country_iso3 = l.country_iso3 AND sr.computed_at = l.max_at
-        """
-    ).fetchall()
-    risk_deltas = {r[0]: r[1] for r in risk_rows if r[1] is not None}
-    impact = estimate_portfolio_impact(risk_deltas)
-    return {
-        "total_shock_pct": impact.total_shock_pct,
-        "total_shock_usd": impact.total_shock_usd,
-        "position_attribution": [{"ticker": p.ticker, "weight": p.weight, "shock_contribution_pct": p.shock_contribution_pct} for p in impact.position_attribution],
-        "worst_country_exposures": [{"country": e.country, "portfolio_weight_exposed": e.portfolio_weight_exposed, "shock_pct": e.shock_pct} for e in impact.worst_country_exposures],
-    }
+    def _build():
+        conn = get_conn()
+        risk_rows = conn.execute(
+            """
+            SELECT sr.country_iso3, CAST(json_extract(sr.sub_scores_json, '$.delta_7d') AS DOUBLE) AS delta_7d
+            FROM sovereign_risk sr
+            INNER JOIN (SELECT country_iso3, MAX(computed_at) max_at FROM sovereign_risk GROUP BY country_iso3) l
+                ON sr.country_iso3 = l.country_iso3 AND sr.computed_at = l.max_at
+            """
+        ).fetchall()
+        risk_deltas = {r[0]: r[1] for r in risk_rows if r[1] is not None}
+        impact = estimate_portfolio_impact(risk_deltas)
+        return {
+            "total_shock_pct": impact.total_shock_pct,
+            "total_shock_usd": impact.total_shock_usd,
+            "position_attribution": [{"ticker": p.ticker, "weight": p.weight, "shock_contribution_pct": p.shock_contribution_pct} for p in impact.position_attribution],
+            "worst_country_exposures": [{"country": e.country, "portfolio_weight_exposed": e.portfolio_weight_exposed, "shock_pct": e.shock_pct} for e in impact.worst_country_exposures],
+        }
+    return _cached("portfolio_impact", 600, _build)
 
 
 @router.post("/portfolio/stress")
