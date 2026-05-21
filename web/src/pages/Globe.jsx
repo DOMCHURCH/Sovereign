@@ -4,6 +4,12 @@ import GlobeGL from 'react-globe.gl'
 import { api } from '../api'
 import RiskBadge from '../components/RiskBadge'
 import AlertFeed from '../components/AlertFeed'
+import {
+  buildConflictsByCountry, getConflictViewColor,
+  computeContagionScores, getContagionViewColor,
+  clusterConflicts, buildEnrichedTooltip,
+  CONFLICT_VIEW_COLORS,
+} from '../lib/conflictLayer'
 
 const GEO_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson'
 
@@ -235,6 +241,8 @@ export default function Globe() {
   const [marketData, setMarketData] = useState(null)
   const [weatherData, setWeatherData] = useState([])
   const [showWeather, setShowWeather] = useState(true)
+  const [viewMode, setViewMode] = useState('risk')   // 'risk' | 'conflict' | 'contagion'
+  const [gtiAll, setGtiAll] = useState([])
   const globeRef = useRef(null)
   const navigate = useNavigate()
 
@@ -251,7 +259,7 @@ export default function Globe() {
       .catch(() => { setConflicts(FALLBACK_CONFLICTS); setConflictsLoading(false) })
     api.conflictsSource().then(d => setConflictSource(d.source)).catch(() => {})
 
-    api.gti().then(d => setGtiData(d.slice(0, 8))).catch(() => {})
+    api.gti().then(d => { setGtiData(d.slice(0, 8)); setGtiAll(d) }).catch(() => {})
     api.marketSnapshot().then(setMarketData).catch(() => {})
     api.weather().then(setWeatherData).catch(() => {})
 
@@ -259,7 +267,7 @@ export default function Globe() {
       api.countries().then(d => { setCountries(d && d.length > 0 ? d : FALLBACK_COUNTRIES); setLastRefresh(new Date()) }).catch(() => {})
       api.alerts().then(setAlerts).catch(() => {})
       api.portfolioImpact().then(setImpact).catch(() => {})
-      api.gti().then(d => setGtiData(d.slice(0, 8))).catch(() => {})
+      api.gti().then(d => { setGtiData(d.slice(0, 8)); setGtiAll(d) }).catch(() => {})
     }, 60000)
     return () => clearInterval(t)
   }, [])
@@ -324,6 +332,30 @@ export default function Globe() {
     [alerts]
   )
 
+  // ── Conflict layer derived state ─────────────────────────────────────────────
+  const gtiByIso3 = useMemo(
+    () => Object.fromEntries(gtiAll.map(g => [g.iso3, g])),
+    [gtiAll]
+  )
+
+  const conflictsByCountry = useMemo(
+    () => buildConflictsByCountry(conflicts),
+    [conflicts]
+  )
+
+  const contagionScores = useMemo(
+    () => computeContagionScores(countries, conflicts, gtiByIso3),
+    [countries, conflicts, gtiByIso3]
+  )
+
+  // In Conflict View, cluster nearby hotspots into merged markers
+  const clusteredConflicts = useMemo(() => clusterConflicts(conflicts), [conflicts])
+
+  const activePointsData = useMemo(
+    () => viewMode === 'conflict' ? clusteredConflicts : conflicts,
+    [viewMode, clusteredConflicts, conflicts]
+  )
+
   // Pulsing rings: severe/high countries + conflict zones + severe weather (cyan)
   const ringsData = useMemo(() => {
     const countryRings = countries
@@ -349,7 +381,17 @@ export default function Globe() {
           }))
       : []
 
-    return [...countryRings, ...conflictRings, ...weatherRings]
+    // Pulsing amber rings for countries with rapidly escalating tension (delta > 2.5)
+    // Only shown for countries not already in the severe/high ring set
+    const risingRings = countries
+      .filter(c => (c.risk_delta_7d || 0) > 2.5 && CAPITALS[c.iso3]
+        && c.risk_tier !== 'severe' && c.risk_tier !== 'high')
+      .map(c => ({
+        lat: CAPITALS[c.iso3].lat, lng: CAPITALS[c.iso3].lng,
+        iso3: c.iso3, kind: 'rising',
+      }))
+
+    return [...countryRings, ...conflictRings, ...weatherRings, ...risingRings]
   }, [countries, conflicts, weatherData, showWeather])
 
   const handleClick = useCallback((feat) => {
@@ -378,11 +420,21 @@ export default function Globe() {
   const polygonColor = useCallback((feat) => {
     const iso3 = getIso3(feat)
     const c = iso3 ? byIso3[iso3] : null
+    const isHov = hovered && getIso3(hovered) === iso3
+
+    if (viewMode === 'conflict') {
+      const color = getConflictViewColor(iso3, conflictsByCountry, c)
+      return hexToRgba(color, isHov ? 0.95 : 0.78)
+    }
+    if (viewMode === 'contagion') {
+      const color = getContagionViewColor(iso3, contagionScores)
+      return hexToRgba(color, isHov ? 0.95 : 0.82)
+    }
+    // Risk view (default)
     const tier = c?.risk_tier || 'none'
     const color = TIER_COLORS[tier] || TIER_COLORS.none
-    const isHov = hovered && getIso3(hovered) === iso3
     return hexToRgba(color, isHov ? 0.95 : (TIER_CAP_ALPHA[tier] ?? 0.5))
-  }, [byIso3, hovered])
+  }, [byIso3, hovered, viewMode, conflictsByCountry, contagionScores])
 
   const polygonSideColor = useCallback((feat) => {
     const iso3 = getIso3(feat)
@@ -402,20 +454,13 @@ export default function Globe() {
     const iso3 = getIso3(feat)
     const c = iso3 ? byIso3[iso3] : null
     if (!c) return ''
-    const score = c.sovereign_risk_score?.toFixed(1) ?? '—'
-    const delta = deltaArrow(c.risk_delta_7d)
-    const tier = c.risk_tier || 'unknown'
-    const driver = c.top_risk_drivers?.[0] || ''
-    return `<div style="background:rgba(12,12,20,0.97);border:1px solid #2e2e42;border-radius:8px;padding:10px 14px;font-family:monospace;min-width:180px;max-width:220px">
-      <div style="color:#e2e8f0;font-size:13px;font-weight:600;margin-bottom:4px">${c.name}</div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="font-size:11px;padding:1px 6px;border-radius:4px;background:${TIER_COLORS[tier]}25;color:${TIER_COLORS[tier]};text-transform:uppercase">${tier}</span>
-        <span style="color:${TIER_COLORS[tier]};font-size:14px;font-weight:bold">${score}</span>
-        <span style="color:${deltaColor(c.risk_delta_7d)};font-size:11px">${delta}</span>
-      </div>
-      ${driver ? `<div style="color:#94a3b8;font-size:11px">⚡ ${driver}</div>` : ''}
-    </div>`
-  }, [byIso3])
+    return buildEnrichedTooltip(
+      c,
+      conflictsByCountry[iso3] || [],
+      gtiByIso3[iso3] || null,
+      alerts.filter(a => a.country_iso3 === iso3 && !a.acknowledged),
+    )
+  }, [byIso3, conflictsByCountry, gtiByIso3, alerts])
 
   // Stable stroke color — must not be inline arrow or it recreates every render
   const polygonStroke = useCallback(() => 'rgba(148,163,184,0.15)', [])
@@ -528,7 +573,7 @@ export default function Globe() {
           onPolygonClick={handleClick}
           onPolygonHover={handleHover}
           polygonsTransitionDuration={200}
-          pointsData={conflicts}
+          pointsData={activePointsData}
           pointLat="lat"
           pointLng="lng"
           pointColor={conflictColor}
@@ -553,25 +598,119 @@ export default function Globe() {
           arcLabel={arcLabel}
           ringsData={ringsData}
           ringColor={r => {
+            if (r.kind === 'rising')  return 'rgba(251,191,36,0.55)'  // amber — rapidly escalating GTI
             if (r.kind === 'weather') return '#06b6d4bb'
             if (r.kind === 'conflict') return (r.color || '#ef4444') + 'cc'
             return r.tier === 'severe' ? '#ef444499' : '#f9731666'
           }}
           ringMaxRadius={r => {
+            if (r.kind === 'rising')  return 2.5
             if (r.kind === 'weather') return 5
             if (r.kind === 'conflict') return r.tier === 'major' ? 6 : 4
             return r.tier === 'severe' ? 4 : 3
           }}
           ringPropagationSpeed={r => {
+            if (r.kind === 'rising')  return 1.4
             if (r.kind === 'weather') return 2
             return r.kind === 'conflict' ? (r.tier === 'major' ? 4 : 2.5) : (r.tier === 'severe' ? 3 : 2)
           }}
           ringRepeatPeriod={r => {
+            if (r.kind === 'rising')  return 2400   // slow amber pulse
             if (r.kind === 'weather') return 1200
             return r.kind === 'conflict' ? (r.tier === 'major' ? 700 : 1100) : (r.tier === 'severe' ? 900 : 1400)
           }}
           ringAltitude={0.01}
         />
+
+        {/* ── View mode toggle (top-left) ────────────────────────────────── */}
+        <div className="absolute top-3 left-3 z-10 flex rounded-lg overflow-hidden"
+             style={{ background: 'rgba(7,7,16,0.88)', border: '1px solid #1e2d3d', backdropFilter: 'blur(10px)' }}>
+          {[
+            { mode: 'risk',      label: 'Risk' },
+            { mode: 'conflict',  label: 'Conflict' },
+            { mode: 'contagion', label: 'Contagion' },
+          ].map(({ mode, label }, i) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className="px-3 py-1.5 text-xs font-mono font-semibold transition-all duration-200"
+              style={{
+                background: viewMode === mode ? 'rgba(99,102,241,0.25)' : 'transparent',
+                color: viewMode === mode ? '#a78bfa' : '#475569',
+                borderRight: i < 2 ? '1px solid #1e2d3d' : 'none',
+                letterSpacing: '0.05em',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Floating legend (below toggle) ───────────────────────────────── */}
+        <div className="absolute left-3 z-10 pointer-events-none" style={{ top: '3.25rem' }}>
+          <div className="rounded-lg px-3 py-2.5"
+               style={{ background: 'rgba(7,7,16,0.88)', border: '1px solid #1e2d3d', backdropFilter: 'blur(10px)', minWidth: 148 }}>
+            <div className="text-xs font-mono text-slate-600 uppercase tracking-widest mb-2" style={{ fontSize: 9, letterSpacing: '0.08em' }}>
+              {viewMode === 'risk' ? 'Sovereign Risk' : viewMode === 'conflict' ? 'Conflict Status' : 'Contagion Exposure'}
+            </div>
+
+            {viewMode === 'risk' && (
+              <div className="space-y-1.5">
+                {[['severe', '#f87171', '>75'], ['high', '#fb923c', '55–75'], ['elevated', '#fbbf24', '35–55'], ['low', '#4ade80', '<35']].map(([t, c, r]) => (
+                  <div key={t} className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c, boxShadow: `0 0 4px ${c}66` }} />
+                    <span className="font-mono capitalize text-slate-400" style={{ fontSize: 10 }}>{t}</span>
+                    <span className="font-mono text-slate-600 ml-auto" style={{ fontSize: 9 }}>{r}</span>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 pt-1" style={{ borderTop: '1px solid #1e2d3d', marginTop: 4 }}>
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#fbbf24', boxShadow: '0 0 4px #fbbf2466' }} />
+                  <span className="font-mono text-slate-500" style={{ fontSize: 9 }}>amber ring = rising GTI</span>
+                </div>
+              </div>
+            )}
+
+            {viewMode === 'conflict' && (
+              <div className="space-y-1.5">
+                {[
+                  ['Active War',   CONFLICT_VIEW_COLORS.active_war],
+                  ['Insurgency',   CONFLICT_VIEW_COLORS.insurgency],
+                  ['Tension',      CONFLICT_VIEW_COLORS.tension],
+                  ['Sanctions',    CONFLICT_VIEW_COLORS.sanctions],
+                  ['Stable',       CONFLICT_VIEW_COLORS.stable],
+                ].map(([label, c]) => (
+                  <div key={label} className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c, boxShadow: `0 0 4px ${c}66` }} />
+                    <span className="font-mono text-slate-400" style={{ fontSize: 10 }}>{label}</span>
+                  </div>
+                ))}
+                <div className="font-mono text-slate-600 pt-1" style={{ fontSize: 9, borderTop: '1px solid #1e2d3d', marginTop: 4 }}>
+                  Hotspots clustered by proximity
+                </div>
+              </div>
+            )}
+
+            {viewMode === 'contagion' && (
+              <div className="space-y-1.5">
+                {[
+                  ['Epicenter',     '#ef4444', '>75'],
+                  ['High Exposure', '#f97316', '50–75'],
+                  ['Moderate',      '#fbbf24', '25–50'],
+                  ['Low Risk',      '#22c55e', '<25'],
+                ].map(([label, c, r]) => (
+                  <div key={label} className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c, boxShadow: `0 0 4px ${c}66` }} />
+                    <span className="font-mono text-slate-400" style={{ fontSize: 10 }}>{label}</span>
+                    <span className="font-mono text-slate-600 ml-auto" style={{ fontSize: 9 }}>{r}</span>
+                  </div>
+                ))}
+                <div className="font-mono text-slate-600 pt-1" style={{ fontSize: 9, borderTop: '1px solid #1e2d3d', marginTop: 4, lineHeight: 1.5 }}>
+                  Weighted: conflicts · GTI<br/>· region · sanctions
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Drag hint */}
         <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-xs text-slate-600 font-mono pointer-events-none select-none">
