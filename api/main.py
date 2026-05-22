@@ -33,6 +33,11 @@ app.include_router(auth_router, prefix="/api")
 
 # Auto-trigger ingest on startup if data is stale (>6 hours old)
 @app.on_event("startup")
+async def _startup():
+    from auth import _turso_setup
+    _turso_setup()
+
+@app.on_event("startup")
 async def _startup_ingest():
     import asyncio
     async def _delayed():
@@ -1275,11 +1280,13 @@ async def analyst_endpoint(
     if not user_api_key and creds:
         user = get_current_user(creds)
         if user:
-            row = get_conn().execute(
-                "SELECT groq_api_key FROM users WHERE id = ?", [user["id"]]
-            ).fetchone()
-            if row and row[0]:
-                user_api_key = row[0]
+            try:
+                from auth import _turso
+                rows = _turso("SELECT groq_api_key FROM users WHERE id = ?", [user["id"]])
+                if rows and rows[0].get("groq_api_key"):
+                    user_api_key = rows[0]["groq_api_key"]
+            except Exception:
+                pass
 
     async def generate():
         async for chunk in stream_analyst(req.message, req.history, req.country_context, user_api_key=user_api_key):

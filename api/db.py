@@ -174,16 +174,6 @@ def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
         )
     """)
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id              VARCHAR PRIMARY KEY,
-            email           VARCHAR UNIQUE NOT NULL,
-            password_hash   VARCHAR NOT NULL,
-            groq_api_key    VARCHAR,
-            created_at      TIMESTAMP NOT NULL DEFAULT NOW()
-        )
-    """)
-
 
 def log_ingest(source: str, status: str, rows: int = 0, error: str | None = None) -> None:
     conn = get_conn()
