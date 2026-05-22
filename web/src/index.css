@@ -4,6 +4,11 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes sov-pulse {
+  0%, 80%, 100% { opacity: .15; transform: scale(.8); }
+  40%            { opacity: 1;   transform: scale(1);  }
+}
+
 :root {
   --bg: #07070f;
   --surface: #0f0f1a;

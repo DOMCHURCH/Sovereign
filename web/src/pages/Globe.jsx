@@ -12,7 +12,8 @@ import {
   CONFLICT_VIEW_COLORS,
 } from '../lib/conflictLayer'
 
-const GEO_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson'
+// Served from local Vercel CDN — no external round-trip, browser-cached after first load
+const GEO_URL = '/ne_countries.json'
 
 const TIER_COLORS = {
   low:      '#4ade80',  // brighter green
@@ -235,6 +236,7 @@ export default function Globe() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const SIDEBAR_W = isMobile ? 0 : 288
   const [dims, setDims] = useState({ w: window.innerWidth - (window.innerWidth < 768 ? 0 : 288), h: window.innerHeight - 48 })
+  const [globeReady, setGlobeReady] = useState(false)
   const [conflicts, setConflicts] = useState([])
   const [conflictSource, setConflictSource] = useState('curated')
   const [conflictsLoading, setConflictsLoading] = useState(false)
@@ -314,6 +316,7 @@ export default function Globe() {
     controls.autoRotate = true
     controls.autoRotateSpeed = 0.4
     controls.enableZoom = true
+    setGlobeReady(true)
   }, [])
 
   const byIso3 = useMemo(
@@ -618,6 +621,28 @@ export default function Globe() {
           }}
           ringAltitude={0.01}
         />
+
+        {/* ── Globe initialization overlay ─────────────────────────────── */}
+        {!globeReady && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 pointer-events-none"
+               style={{ background: '#070710', zIndex: 5 }}>
+            <div style={{ color: '#a78bfa', fontFamily: 'monospace', fontSize: 13, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+              Sovereign
+            </div>
+            <div style={{ color: '#1e3a5f', fontFamily: 'monospace', fontSize: 10, letterSpacing: '0.12em' }}>
+              Initializing geospatial engine
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{
+                  width: 5, height: 5, borderRadius: '50%', background: '#6366f1',
+                  animation: 'sov-pulse 1.3s ease-in-out infinite',
+                  animationDelay: `${i * 0.2}s`,
+                }} />
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── Mobile Intel sidebar toggle (top-right, inside globe area) ── */}
         {isMobile && (

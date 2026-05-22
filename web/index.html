@@ -7,8 +7,46 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌐</text></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      /* Instant paint — visible before any JS executes */
+      html, body { margin: 0; padding: 0; background: #070710; }
+      #boot {
+        position: fixed; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 20px;
+        background: #070710; z-index: 9999; transition: opacity 0.4s ease;
+        font-family: 'JetBrains Mono', 'Courier New', monospace;
+      }
+      #boot .logo {
+        color: #a78bfa; font-size: 22px; font-weight: 700;
+        letter-spacing: 0.22em; text-transform: uppercase;
+      }
+      #boot .sub {
+        color: #334155; font-size: 10px; letter-spacing: 0.15em;
+        text-transform: uppercase; margin-top: -12px;
+      }
+      #boot .dots { display: flex; gap: 7px; }
+      #boot .dot {
+        width: 6px; height: 6px; border-radius: 50%; background: #6366f1;
+        animation: sov-pulse 1.3s ease-in-out infinite;
+      }
+      #boot .dot:nth-child(2) { animation-delay: 0.2s; }
+      #boot .dot:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes sov-pulse { 0%,80%,100%{opacity:.15;transform:scale(.8)} 40%{opacity:1;transform:scale(1)} }
+      #boot.gone { opacity: 0; pointer-events: none; }
+    </style>
   </head>
   <body>
+    <!-- Shown instantly while JS bundle downloads/parses -->
+    <div id="boot">
+      <div class="logo">Sovereign</div>
+      <div class="sub">Geopolitical Risk Intelligence</div>
+      <div class="dots">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

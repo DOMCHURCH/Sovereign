@@ -559,7 +559,10 @@ function Nav() {
   )
 }
 
-export default function App() {
+export default function App({ onReady }) {
+  // Dismiss the HTML boot screen the first time any route renders
+  useEffect(() => { onReady?.() }, [])
+
   return (
     <BrowserRouter>
       <Nav />
@@ -567,7 +570,20 @@ export default function App() {
       <div style={{ paddingTop: '48px', minHeight: '100vh' }}>
         <Suspense fallback={
           <div className="flex items-center justify-center h-screen" style={{ background: '#070710' }}>
-            <div className="text-slate-600 font-mono text-sm animate-pulse">Loading...</div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+              <div style={{ color: '#a78bfa', fontFamily: 'monospace', fontSize: 14, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                Loading
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{
+                    width: 6, height: 6, borderRadius: '50%', background: '#6366f1',
+                    animation: 'sov-pulse 1.3s ease-in-out infinite',
+                    animationDelay: `${i * 0.2}s`,
+                  }} />
+                ))}
+              </div>
+            </div>
           </div>
         }>
           <Routes>
