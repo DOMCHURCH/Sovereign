@@ -489,11 +489,11 @@ function AuthModal({ isOpen, onClose, onAuth }) {
   const onEnter = e => e.key === 'Enter' && submit()
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-         style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
+    <div className="fixed z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4"
+         style={{ inset: 0, top: 48, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
          onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl overflow-hidden fade-in"
-           style={{ background: '#0b0b16', border: '1px solid #252538', boxShadow: '0 32px 80px rgba(0,0,0,0.9)' }}
+      <div className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl overflow-y-auto fade-in"
+           style={{ background: '#0b0b16', border: '1px solid #252538', boxShadow: '0 -8px 40px rgba(0,0,0,0.9)', maxHeight: 'calc(100vh - 64px)' }}
            onClick={e => e.stopPropagation()}>
 
         {/* Header */}
