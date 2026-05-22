@@ -542,6 +542,15 @@ export default function Globe() {
       }))
   }, [weatherData, showWeather])
 
+  const loadStages = [
+    { key: 'geo',       label: 'GEOSPATIAL LAYER',     done: geoData.length > 0 },
+    { key: 'countries', label: 'COUNTRY RISK DATA',     done: countries.length > 0 },
+    { key: 'conflicts', label: 'CONFLICT INTELLIGENCE', done: conflicts.length > 0 },
+    { key: 'engine',    label: 'RENDERING ENGINE',      done: globeReady },
+  ]
+  const loadDone = loadStages.filter(s => s.done).length
+  const allLoaded = loadDone === 4
+
   return (
     <div className="flex h-screen overflow-hidden relative" style={{ background: '#070710' }}>
       {/* Mobile sidebar backdrop */}
@@ -555,6 +564,7 @@ export default function Globe() {
 
       {/* Globe area */}
       <div className="flex-1 relative overflow-hidden">
+        <div style={{ opacity: allLoaded ? 1 : 0.01, transition: 'opacity 1.4s ease 0.4s', pointerEvents: allLoaded ? 'auto' : 'none' }}>
         <GlobeGL
           ref={globeRef}
           width={dims.w}
@@ -621,28 +631,93 @@ export default function Globe() {
           }}
           ringAltitude={0.01}
         />
+        </div>
 
-        {/* ── Globe initialization overlay ─────────────────────────────── */}
-        {!globeReady && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 pointer-events-none"
-               style={{ background: '#070710', zIndex: 5 }}>
-            <div style={{ color: '#a78bfa', fontFamily: 'monospace', fontSize: 13, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
-              Sovereign
+        {/* ── Cinematic loading overlay ────────────────────────────────── */}
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center"
+          style={{
+            background: '#070710',
+            zIndex: 5,
+            opacity: allLoaded ? 0 : 1,
+            transition: 'opacity 1s ease 0.3s',
+            pointerEvents: allLoaded ? 'none' : 'auto',
+          }}
+        >
+          {/* Logo */}
+          <div style={{ color: '#a78bfa', fontFamily: 'monospace', fontSize: 20, letterSpacing: '0.28em', textTransform: 'uppercase', fontWeight: 800, marginBottom: 6 }}>
+            SOVEREIGN
+          </div>
+          <div style={{ color: '#1e2d3d', fontFamily: 'monospace', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 40 }}>
+            Geopolitical Risk Intelligence Platform
+          </div>
+
+          {/* Stage rows */}
+          <div style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {loadStages.map(({ key, label, done }, idx) => {
+              const isActive = !done && loadStages.slice(0, idx).every(s => s.done)
+              return (
+                <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {/* Status dot */}
+                  <div style={{
+                    width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                    background: done ? '#4ade80' : isActive ? '#6366f1' : '#1e2d3d',
+                    boxShadow: done ? '0 0 6px #4ade8088' : isActive ? '0 0 8px #6366f1aa' : 'none',
+                    animation: isActive ? 'sov-pulse 1.3s ease-in-out infinite' : 'none',
+                  }} />
+                  {/* Label */}
+                  <span style={{
+                    fontFamily: 'monospace', fontSize: 10, letterSpacing: '0.08em',
+                    color: done ? '#64748b' : isActive ? '#94a3b8' : '#1e2d3d',
+                    flexShrink: 0,
+                  }}>
+                    {label}
+                  </span>
+                  {/* Dot fill */}
+                  <div style={{ flex: 1, borderBottom: '1px dotted #1a1a2a' }} />
+                  {/* Status text */}
+                  <span style={{
+                    fontFamily: 'monospace', fontSize: 9, letterSpacing: '0.06em', flexShrink: 0,
+                    color: done ? '#4ade80' : isActive ? '#6366f1' : '#1e2d3d',
+                  }}>
+                    {done ? 'READY' : isActive ? 'LOADING' : 'STANDBY'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Progress bar */}
+          <div style={{ width: 300, marginTop: 28 }}>
+            <div style={{ height: 2, background: '#0f1929', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', borderRadius: 2,
+                width: `${(loadDone / 4) * 100}%`,
+                background: 'linear-gradient(90deg, #4f46e5, #6366f1)',
+                transition: 'width 0.6s ease',
+              }} />
             </div>
-            <div style={{ color: '#1e3a5f', fontFamily: 'monospace', fontSize: 10, letterSpacing: '0.12em' }}>
-              Initializing geospatial engine
-            </div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-              {[0, 1, 2].map(i => (
-                <div key={i} style={{
-                  width: 5, height: 5, borderRadius: '50%', background: '#6366f1',
-                  animation: 'sov-pulse 1.3s ease-in-out infinite',
-                  animationDelay: `${i * 0.2}s`,
-                }} />
-              ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+              <span style={{ fontFamily: 'monospace', fontSize: 9, color: '#334155', letterSpacing: '0.06em' }}>
+                {loadDone}/4 SYSTEMS ONLINE
+              </span>
+              <span style={{ fontFamily: 'monospace', fontSize: 9, color: '#334155', letterSpacing: '0.06em' }}>
+                {Math.round((loadDone / 4) * 100)}%
+              </span>
             </div>
           </div>
-        )}
+
+          {/* Pulsing dots */}
+          <div style={{ display: 'flex', gap: 5, marginTop: 32 }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{
+                width: 4, height: 4, borderRadius: '50%', background: '#6366f1',
+                animation: 'sov-pulse 1.3s ease-in-out infinite',
+                animationDelay: `${i * 0.22}s`,
+              }} />
+            ))}
+          </div>
+        </div>
 
         {/* ── Mobile Intel sidebar toggle (top-right, inside globe area) ── */}
         {isMobile && (
