@@ -16,11 +16,17 @@ _copy_lock = threading.Lock()
 
 
 def _runtime_db_path() -> str:
+    # 1. Explicit override — used on Render (DATABASE_PATH=/data/sovereign.duckdb)
+    env_path = os.getenv("DATABASE_PATH", "").strip()
+    if env_path:
+        return env_path
+    # 2. Seed DB bundled with the repo — copy once to /tmp for mutable runtime use
     if _SEED_DB.exists():
         with _copy_lock:
             if not _RUNTIME_DB.exists():
                 shutil.copy2(str(_SEED_DB), str(_RUNTIME_DB))
         return str(_RUNTIME_DB)
+    # 3. Local dev fallback
     return str(_API_DIR / "sovereign.duckdb")
 
 
@@ -31,8 +37,7 @@ def get_conn() -> duckdb.DuckDBPyConnection:
     if conn is None:
         path = _runtime_db_path()
         conn = duckdb.connect(path)
-        if path != str(_RUNTIME_DB):
-            _init_schema(conn)
+        _init_schema(conn)   # CREATE TABLE IF NOT EXISTS — always safe
         _local.conn = conn
     return conn
 
@@ -171,6 +176,16 @@ def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
             wind_kmh        DOUBLE,
             is_severe       BOOLEAN NOT NULL DEFAULT FALSE,
             fetched_at      TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id            VARCHAR PRIMARY KEY,
+            email         VARCHAR UNIQUE NOT NULL,
+            password_hash VARCHAR NOT NULL,
+            groq_api_key  VARCHAR,
+            created_at    TIMESTAMP NOT NULL DEFAULT NOW()
         )
     """)
 
