@@ -369,11 +369,99 @@ function AlertBadge() {
   )
 }
 
+function ApiKeyModal({ isOpen, onClose }) {
+  const [key, setKey] = useState(() => localStorage.getItem('sov:user_api_key') || '')
+  const [show, setShow] = useState(false)
+  const [status, setStatus] = useState(null) // 'saved' | 'cleared'
+
+  if (!isOpen) return null
+
+  const save = () => {
+    key.trim() ? localStorage.setItem('sov:user_api_key', key.trim())
+               : localStorage.removeItem('sov:user_api_key')
+    setStatus('saved')
+    setTimeout(() => { setStatus(null); onClose() }, 700)
+  }
+  const clear = () => {
+    setKey('')
+    localStorage.removeItem('sov:user_api_key')
+    setStatus('cleared')
+    setTimeout(() => { setStatus(null); onClose() }, 600)
+  }
+  const hasStored = !!localStorage.getItem('sov:user_api_key')
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}
+         onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl p-6"
+           style={{ background: '#0d0d18', border: '1px solid #2e2e42', boxShadow: '0 24px 64px rgba(0,0,0,0.8)' }}
+           onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-sm font-mono font-bold text-slate-200 tracking-widest uppercase">AI Analyst Key</h2>
+          <button onClick={onClose} className="text-slate-600 hover:text-slate-400 transition-colors p-1">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <p className="text-xs text-slate-600 mb-5 leading-relaxed">
+          Paste your{' '}
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer"
+             className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Groq API key</a>
+          {' '}(free at groq.com). Stored in your browser only — never logged.
+        </p>
+
+        <div className="relative mb-3">
+          <input
+            type={show ? 'text' : 'password'}
+            value={key}
+            onChange={e => setKey(e.target.value)}
+            placeholder="gsk_..."
+            className="w-full px-3 py-2.5 rounded-lg text-sm font-mono bg-transparent text-slate-200 pr-10 focus:outline-none"
+            style={{ border: '1px solid #2e2e42', focusBorderColor: '#6366f1' }}
+            onKeyDown={e => e.key === 'Enter' && save()}
+          />
+          <button onClick={() => setShow(s => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 transition-colors">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              {show
+                ? <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></>
+                : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>}
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex gap-2 mb-4">
+          <button onClick={save}
+                  className="flex-1 py-2 rounded-lg text-xs font-mono font-semibold transition-all duration-200"
+                  style={{
+                    background: status === 'saved' ? 'rgba(74,222,128,0.15)' : 'rgba(99,102,241,0.2)',
+                    color:      status === 'saved' ? '#4ade80' : '#a78bfa',
+                    border:     `1px solid ${status === 'saved' ? 'rgba(74,222,128,0.3)' : 'rgba(99,102,241,0.3)'}`,
+                  }}>
+            {status === 'saved' ? '✓ Saved' : 'Save Key'}
+          </button>
+          {hasStored && (
+            <button onClick={clear}
+                    className="px-4 py-2 rounded-lg text-xs font-mono transition-colors hover:text-slate-300"
+                    style={{ border: '1px solid #2e2e42', color: '#475569' }}>
+              {status === 'cleared' ? '✓' : 'Clear'}
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-slate-700 leading-relaxed">
+          No key? The backend uses its own Groq key — you don't need to provide one.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function Nav() {
   const location = useLocation()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [countries, setCountries] = useState([])
+  const [apiKeyOpen, setApiKeyOpen] = useState(false)
 
   useEffect(() => {
     api.countries().then(setCountries).catch(() => {})
@@ -473,6 +561,24 @@ function Nav() {
           <div className="hidden sm:block">
             <DataFreshness />
           </div>
+
+          {/* BYOK: API key settings — key icon, subtle, always visible */}
+          <button
+            onClick={() => setApiKeyOpen(true)}
+            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+            style={{
+              border: '1px solid rgba(255,255,255,0.06)',
+              color: localStorage.getItem('sov:user_api_key') ? '#6366f1' : '#475569',
+            }}
+            title="AI API Key"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="7.5" cy="15.5" r="4.5"/>
+              <path d="M21 2l-9.6 9.6M15.5 7.5L18 10"/>
+            </svg>
+          </button>
+          <ApiKeyModal isOpen={apiKeyOpen} onClose={() => setApiKeyOpen(false)} />
+
           <SearchBar countries={countries} />
 
           <button

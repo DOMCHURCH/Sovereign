@@ -4,7 +4,13 @@ import requests
 from typing import AsyncGenerator
 from db import get_conn
 
-CEREBRAS_MODEL = "llama3.1-8b"
+# Provider routing — priority: GROQ_API_KEY > CEREBRAS_API_KEY (legacy, retiring May 2026)
+# User-provided BYOK key always routes to Groq
+GROQ_BASE_URL      = "https://api.groq.com/openai/v1"
+GROQ_MODEL         = "llama-3.3-70b-versatile"
+CEREBRAS_BASE_URL  = "https://api.cerebras.ai/v1"
+CEREBRAS_MODEL     = "llama3.1-8b"
+
 BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 
 SYSTEM_PROMPT_TEMPLATE = """You are Sovereign, an institutional geopolitical risk analyst with live access to sovereign risk scores, conflict intelligence, contagion models, and portfolio impact estimates for 50+ countries.
@@ -23,7 +29,6 @@ Data: World Bank WGI, OFAC SDN, country ETFs via yfinance, RSS news sentiment (V
 
 
 def _brave_search(query: str) -> str:
-    """Return top 3 search result snippets as context string."""
     api_key = os.getenv("BRAVE_SEARCH_API_KEY") or os.getenv("BRAVE_SEARCH_API", "")
     if not api_key:
         return ""
@@ -40,8 +45,8 @@ def _brave_search(query: str) -> str:
         snippets = []
         for r in results[:3]:
             title = r.get("title", "")
-            desc = r.get("description", "")
-            url = r.get("url", "")
+            desc  = r.get("description", "")
+            url   = r.get("url", "")
             snippets.append(f"• {title}: {desc} ({url})")
         if snippets:
             return "\nLive intelligence (Brave Search):\n" + "\n".join(snippets)
@@ -78,7 +83,7 @@ def _build_system_prompt(message: str, country_context: str | None = None) -> st
     alert_rows = conn.execute(
         "SELECT severity FROM alerts WHERE acknowledged = FALSE"
     ).fetchall()
-    alert_count = len(alert_rows)
+    alert_count    = len(alert_rows)
     critical_count = sum(1 for r in alert_rows if r[0] == "critical")
 
     port_row = conn.execute(
@@ -93,7 +98,6 @@ def _build_system_prompt(message: str, country_context: str | None = None) -> st
     risk_deltas = {r[0]: r[1] for r in port_row if r[1] is not None}
     impact = estimate_portfolio_impact(risk_deltas)
 
-    # GTI leaders
     try:
         gti_rows = conn.execute(
             "SELECT country_iso3, gti, tier FROM gti_scores ORDER BY gti DESC LIMIT 5"
@@ -105,9 +109,7 @@ def _build_system_prompt(message: str, country_context: str | None = None) -> st
     except Exception:
         gti_leaders = "GTI not yet computed"
 
-    # Brave Search grounding for the user's message
     search_ctx = _brave_search(f"geopolitical {message} 2025 2026")
-
     ctx = f"\nCountry context loaded: {country_context}" if country_context else ""
 
     return SYSTEM_PROMPT_TEMPLATE.format(
@@ -125,6 +127,7 @@ async def stream_analyst(
     message: str,
     history: list[dict],
     country_context: str | None = None,
+    user_api_key: str | None = None,
 ) -> AsyncGenerator[str, None]:
     system = _build_system_prompt(message, country_context)
 
@@ -133,23 +136,34 @@ async def stream_analyst(
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": message})
 
+    # Key + provider resolution (Groq preferred; Cerebras as legacy fallback)
+    groq_key     = user_api_key or os.getenv("GROQ_API_KEY", "")
     cerebras_key = os.getenv("CEREBRAS_API_KEY", "")
 
-    if not cerebras_key:
-        yield "No AI API key configured. Set CEREBRAS_API_KEY in your Vercel environment variables."
+    if groq_key:
+        api_key  = groq_key
+        base_url = GROQ_BASE_URL
+        model    = GROQ_MODEL
+    elif cerebras_key:
+        api_key  = cerebras_key
+        base_url = CEREBRAS_BASE_URL
+        model    = CEREBRAS_MODEL
+    else:
+        yield "data: No AI API key configured — set GROQ_API_KEY in environment variables, or provide your own key via the settings panel."
         return
 
     from openai import AsyncOpenAI
-    client = AsyncOpenAI(
-        api_key=cerebras_key,
-        base_url="https://api.cerebras.ai/v1",
-    )
-    stream = await client.chat.completions.create(
-        model=CEREBRAS_MODEL,
-        max_tokens=1024,
-        messages=[{"role": "system", "content": system}] + messages,
-        stream=True,
-    )
-    async for chunk in stream:
-        if chunk.choices[0].delta.content:
-            yield chunk.choices[0].delta.content
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+    try:
+        stream = await client.chat.completions.create(
+            model=model,
+            max_tokens=1024,
+            messages=[{"role": "system", "content": system}] + messages,
+            stream=True,
+        )
+        async for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+    except Exception as e:
+        yield f"\n\n[AI unavailable: {str(e)[:120]}]"

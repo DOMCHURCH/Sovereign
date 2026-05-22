@@ -3,7 +3,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, APIRouter
+from fastapi import FastAPI, HTTPException, BackgroundTasks, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -1258,9 +1258,10 @@ def run_ingest(background_tasks: BackgroundTasks):
 
 
 @router.post("/analyst")
-async def analyst_endpoint(req: AnalystRequest):
+async def analyst_endpoint(req: AnalystRequest, request: Request):
+    user_api_key = request.headers.get("X-API-Key") or None
     async def generate():
-        async for chunk in stream_analyst(req.message, req.history, req.country_context):
+        async for chunk in stream_analyst(req.message, req.history, req.country_context, user_api_key=user_api_key):
             yield f"data: {json.dumps({'text': chunk})}\n\n"
         yield "data: [DONE]\n\n"
     return StreamingResponse(generate(), media_type="text/event-stream")

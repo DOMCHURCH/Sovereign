@@ -103,9 +103,13 @@ export const api = {
 }
 
 export async function streamAnalyst(message, history, countryContext, onChunk, onDone) {
+  const headers = { 'Content-Type': 'application/json' }
+  const userKey = localStorage.getItem('sov:user_api_key')
+  if (userKey) headers['X-API-Key'] = userKey
+
   const res = await fetch(`${BASE}/analyst`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ message, history, country_context: countryContext }),
   })
 
