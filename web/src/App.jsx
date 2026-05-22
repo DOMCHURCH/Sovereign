@@ -416,8 +416,8 @@ function ApiKeyModal({ isOpen, onClose }) {
             value={key}
             onChange={e => setKey(e.target.value)}
             placeholder="gsk_..."
-            className="w-full px-3 py-2.5 rounded-lg text-sm font-mono bg-transparent text-slate-200 pr-10 focus:outline-none"
-            style={{ border: '1px solid #2e2e42', focusBorderColor: '#6366f1' }}
+            className="w-full px-3 py-2.5 rounded-lg text-sm font-mono bg-transparent text-slate-200 pr-10 outline-none focus:ring-1 focus:ring-indigo-500"
+            style={{ border: '1px solid #2e2e42' }}
             onKeyDown={e => e.key === 'Enter' && save()}
           />
           <button onClick={() => setShow(s => !s)}
@@ -562,20 +562,28 @@ function Nav() {
             <DataFreshness />
           </div>
 
-          {/* BYOK: API key settings — key icon, subtle, always visible */}
+          {/* BYOK: API key settings button */}
           <button
             onClick={() => setApiKeyOpen(true)}
-            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-mono font-semibold"
             style={{
-              border: '1px solid rgba(255,255,255,0.06)',
-              color: localStorage.getItem('sov:user_api_key') ? '#6366f1' : '#475569',
+              border: localStorage.getItem('sov:user_api_key')
+                ? '1px solid rgba(99,102,241,0.4)'
+                : '1px solid rgba(255,255,255,0.1)',
+              background: localStorage.getItem('sov:user_api_key')
+                ? 'rgba(99,102,241,0.15)'
+                : 'rgba(255,255,255,0.04)',
+              color: localStorage.getItem('sov:user_api_key') ? '#a78bfa' : '#94a3b8',
             }}
             title="AI API Key"
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="7.5" cy="15.5" r="4.5"/>
               <path d="M21 2l-9.6 9.6M15.5 7.5L18 10"/>
             </svg>
+            <span className="hidden sm:inline">
+              {localStorage.getItem('sov:user_api_key') ? 'API Key ✓' : 'API Key'}
+            </span>
           </button>
           <ApiKeyModal isOpen={apiKeyOpen} onClose={() => setApiKeyOpen(false)} />
 
