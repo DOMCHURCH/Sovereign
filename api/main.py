@@ -15,6 +15,9 @@ from db import get_conn, log_ingest
 from ontology import hydrate_countries, COUNTRY_METADATA
 from analytics.portfolio_impact import estimate_portfolio_impact, DEMO_PORTFOLIO
 from analyst import stream_analyst
+from auth import router as auth_router, get_current_user
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends
 
 app = FastAPI(title="Sovereign API", version="1.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
@@ -25,6 +28,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router, prefix="/api")
 
 # Auto-trigger ingest on startup if data is stale (>6 hours old)
 @app.on_event("startup")
@@ -1257,9 +1262,25 @@ def run_ingest(background_tasks: BackgroundTasks):
     return {"status": "ingest started"}
 
 
+_analyst_bearer = HTTPBearer(auto_error=False)
+
 @router.post("/analyst")
-async def analyst_endpoint(req: AnalystRequest, request: Request):
+async def analyst_endpoint(
+    req: AnalystRequest,
+    request: Request,
+    creds: HTTPAuthorizationCredentials = Depends(_analyst_bearer),
+):
+    # Priority: header BYOK key > DB key (from JWT user) > env key
     user_api_key = request.headers.get("X-API-Key") or None
+    if not user_api_key and creds:
+        user = get_current_user(creds)
+        if user:
+            row = get_conn().execute(
+                "SELECT groq_api_key FROM users WHERE id = ?", [user["id"]]
+            ).fetchone()
+            if row and row[0]:
+                user_api_key = row[0]
+
     async def generate():
         async for chunk in stream_analyst(req.message, req.history, req.country_context, user_api_key=user_api_key):
             yield f"data: {json.dumps({'text': chunk})}\n\n"

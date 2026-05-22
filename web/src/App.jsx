@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react'
+import { auth } from './api'
 const Globe = lazy(() => import('./pages/Globe'))
 const Country = lazy(() => import('./pages/Country'))
 const Markets = lazy(() => import('./pages/Markets'))
@@ -369,88 +370,259 @@ function AlertBadge() {
   )
 }
 
-function ApiKeyModal({ isOpen, onClose }) {
-  const [key, setKey] = useState(() => localStorage.getItem('sov:user_api_key') || '')
-  const [show, setShow] = useState(false)
-  const [status, setStatus] = useState(null) // 'saved' | 'cleared'
+function EyeIcon({ open }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      {open
+        ? <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></>
+        : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>}
+    </svg>
+  )
+}
+
+function FieldRow({ label, type = 'text', value, onChange, placeholder, show, onToggleShow, onKeyDown }) {
+  return (
+    <div className="mb-3">
+      <label className="block text-xs font-mono text-slate-500 mb-1.5 tracking-wider uppercase">{label}</label>
+      <div className="relative">
+        <input
+          type={show === undefined ? type : (show ? 'text' : 'password')}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          onKeyDown={onKeyDown}
+          className="w-full px-3 py-2.5 rounded-lg text-sm font-mono bg-transparent text-slate-200 outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+          style={{ border: '1px solid #2e2e42', paddingRight: onToggleShow ? '2.25rem' : undefined }}
+        />
+        {onToggleShow && (
+          <button type="button" onClick={onToggleShow}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 transition-colors">
+            <EyeIcon open={show} />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AuthModal({ isOpen, onClose, onAuth }) {
+  const [tab, setTab] = useState('signin')   // 'signin' | 'signup' | 'key'
+  const [email, setEmail]     = useState('')
+  const [password, setPassword] = useState('')
+  const [showPw, setShowPw]   = useState(false)
+  const [apiKey, setApiKey]   = useState('')
+  const [showKey, setShowKey] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState('')
+  const [success, setSuccess] = useState('')
+
+  const user = (() => { try { return JSON.parse(localStorage.getItem('sov:user') || 'null') } catch { return null } })()
+  const isLoggedIn = !!localStorage.getItem('sov:token')
+
+  // Load stored key into field when switching to key tab
+  const openKeyTab = () => {
+    setApiKey(localStorage.getItem('sov:user_api_key') || '')
+    setError('')
+    setSuccess('')
+    setTab('key')
+  }
 
   if (!isOpen) return null
 
-  const save = () => {
-    key.trim() ? localStorage.setItem('sov:user_api_key', key.trim())
-               : localStorage.removeItem('sov:user_api_key')
-    setStatus('saved')
-    setTimeout(() => { setStatus(null); onClose() }, 700)
+  const reset = () => { setEmail(''); setPassword(''); setError(''); setSuccess('') }
+
+  const handleSignIn = async () => {
+    if (!email || !password) { setError('Email and password required'); return }
+    setLoading(true); setError('')
+    try {
+      const res = await auth.login(email, password)
+      localStorage.setItem('sov:token', res.token)
+      localStorage.setItem('sov:user', JSON.stringify({ email: res.email }))
+      if (res.groq_api_key) localStorage.setItem('sov:user_api_key', res.groq_api_key)
+      onAuth?.()
+      setSuccess('Signed in!')
+      setTimeout(() => { setSuccess(''); onClose() }, 600)
+    } catch (e) {
+      setError(e.message.includes('401') ? 'Invalid email or password' : 'Sign in failed — check your connection')
+    } finally { setLoading(false) }
   }
-  const clear = () => {
-    setKey('')
-    localStorage.removeItem('sov:user_api_key')
-    setStatus('cleared')
-    setTimeout(() => { setStatus(null); onClose() }, 600)
+
+  const handleSignUp = async () => {
+    if (!email || !password) { setError('Email and password required'); return }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return }
+    setLoading(true); setError('')
+    try {
+      const res = await auth.register(email, password)
+      localStorage.setItem('sov:token', res.token)
+      localStorage.setItem('sov:user', JSON.stringify({ email: res.email }))
+      onAuth?.()
+      setSuccess('Account created!')
+      setTimeout(() => { setSuccess(''); setTab('key') }, 800)
+    } catch (e) {
+      setError(e.message.includes('409') ? 'An account with that email already exists' : 'Registration failed — try again')
+    } finally { setLoading(false) }
   }
-  const hasStored = !!localStorage.getItem('sov:user_api_key')
+
+  const handleSaveKey = async () => {
+    setLoading(true); setError('')
+    try {
+      if (isLoggedIn) {
+        await auth.updateKey(apiKey.trim())
+      }
+      apiKey.trim()
+        ? localStorage.setItem('sov:user_api_key', apiKey.trim())
+        : localStorage.removeItem('sov:user_api_key')
+      onAuth?.()
+      setSuccess('Key saved!')
+      setTimeout(() => { setSuccess(''); onClose() }, 700)
+    } catch { setError('Failed to save key') }
+    finally { setLoading(false) }
+  }
+
+  const handleLogout = () => {
+    auth.logout()
+    onAuth?.()
+    onClose()
+  }
+
+  const submit = tab === 'signup' ? handleSignUp : tab === 'key' ? handleSaveKey : handleSignIn
+  const onEnter = e => e.key === 'Enter' && submit()
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-         style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}
+         style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
          onClick={onClose}>
-      <div className="w-full max-w-sm rounded-xl p-6"
-           style={{ background: '#0d0d18', border: '1px solid #2e2e42', boxShadow: '0 24px 64px rgba(0,0,0,0.8)' }}
+      <div className="w-full max-w-sm rounded-2xl overflow-hidden fade-in"
+           style={{ background: '#0b0b16', border: '1px solid #252538', boxShadow: '0 32px 80px rgba(0,0,0,0.9)' }}
            onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-sm font-mono font-bold text-slate-200 tracking-widest uppercase">AI Analyst Key</h2>
-          <button onClick={onClose} className="text-slate-600 hover:text-slate-400 transition-colors p-1">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-          </button>
-        </div>
-        <p className="text-xs text-slate-600 mb-5 leading-relaxed">
-          Paste your{' '}
-          <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer"
-             className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Groq API key</a>
-          {' '}(free at groq.com). Stored in your browser only — never logged.
-        </p>
 
-        <div className="relative mb-3">
-          <input
-            type={show ? 'text' : 'password'}
-            value={key}
-            onChange={e => setKey(e.target.value)}
-            placeholder="gsk_..."
-            className="w-full px-3 py-2.5 rounded-lg text-sm font-mono bg-transparent text-slate-200 pr-10 outline-none focus:ring-1 focus:ring-indigo-500"
-            style={{ border: '1px solid #2e2e42' }}
-            onKeyDown={e => e.key === 'Enter' && save()}
-          />
-          <button onClick={() => setShow(s => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 transition-colors">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              {show
-                ? <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></>
-                : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>}
-            </svg>
-          </button>
-        </div>
-
-        <div className="flex gap-2 mb-4">
-          <button onClick={save}
-                  className="flex-1 py-2 rounded-lg text-xs font-mono font-semibold transition-all duration-200"
-                  style={{
-                    background: status === 'saved' ? 'rgba(74,222,128,0.15)' : 'rgba(99,102,241,0.2)',
-                    color:      status === 'saved' ? '#4ade80' : '#a78bfa',
-                    border:     `1px solid ${status === 'saved' ? 'rgba(74,222,128,0.3)' : 'rgba(99,102,241,0.3)'}`,
-                  }}>
-            {status === 'saved' ? '✓ Saved' : 'Save Key'}
-          </button>
-          {hasStored && (
-            <button onClick={clear}
-                    className="px-4 py-2 rounded-lg text-xs font-mono transition-colors hover:text-slate-300"
-                    style={{ border: '1px solid #2e2e42', color: '#475569' }}>
-              {status === 'cleared' ? '✓' : 'Clear'}
+        {/* Header */}
+        <div className="px-6 pt-5 pb-0">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-base font-mono font-bold text-slate-100 tracking-wide">Sovereign</div>
+              <div className="text-xs text-slate-600 font-mono">Geopolitical Risk Intelligence</div>
+            </div>
+            <button onClick={onClose} className="text-slate-600 hover:text-slate-400 transition-colors p-1.5 rounded-lg hover:bg-white/5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
+          </div>
+
+          {/* Tabs */}
+          {isLoggedIn ? (
+            <div className="flex gap-1 p-1 rounded-lg mb-5" style={{ background: '#0f0f1a' }}>
+              {[['key', 'API Key'], ['account', 'Account']].map(([t, label]) => (
+                <button key={t} onClick={() => { setError(''); setSuccess(''); t === 'key' ? openKeyTab() : setTab(t) }}
+                        className="flex-1 py-1.5 rounded-md text-xs font-mono font-semibold transition-all"
+                        style={{
+                          background: tab === t ? 'rgba(99,102,241,0.2)' : 'transparent',
+                          color: tab === t ? '#a78bfa' : '#475569',
+                        }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex gap-1 p-1 rounded-lg mb-5" style={{ background: '#0f0f1a' }}>
+              {[['signin', 'Sign In'], ['signup', 'Sign Up']].map(([t, label]) => (
+                <button key={t} onClick={() => { reset(); setTab(t) }}
+                        className="flex-1 py-1.5 rounded-md text-xs font-mono font-semibold transition-all"
+                        style={{
+                          background: tab === t ? 'rgba(99,102,241,0.2)' : 'transparent',
+                          color: tab === t ? '#a78bfa' : '#475569',
+                        }}>
+                  {label}
+                </button>
+              ))}
+            </div>
           )}
         </div>
-        <p className="text-xs text-slate-700 leading-relaxed">
-          No key? The backend uses its own Groq key — you don't need to provide one.
-        </p>
+
+        {/* Body */}
+        <div className="px-6 pb-6">
+          {/* Error / success */}
+          {error   && <div className="mb-3 px-3 py-2 rounded-lg text-xs font-mono text-red-400"   style={{ background: 'rgba(239,68,68,0.08)',  border: '1px solid rgba(239,68,68,0.2)'  }}>{error}</div>}
+          {success && <div className="mb-3 px-3 py-2 rounded-lg text-xs font-mono text-green-400" style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)' }}>{success}</div>}
+
+          {/* Sign In */}
+          {tab === 'signin' && (
+            <>
+              <FieldRow label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" onKeyDown={onEnter} />
+              <FieldRow label="Password" value={password} onChange={setPassword} placeholder="••••••••" show={showPw} onToggleShow={() => setShowPw(s => !s)} onKeyDown={onEnter} />
+              <button onClick={handleSignIn} disabled={loading}
+                      className="w-full py-2.5 rounded-lg text-sm font-mono font-bold transition-all mt-1"
+                      style={{ background: 'rgba(99,102,241,0.25)', color: '#a78bfa', border: '1px solid rgba(99,102,241,0.35)' }}>
+                {loading ? 'Signing in…' : 'Sign In'}
+              </button>
+              <p className="text-xs text-slate-700 text-center mt-3 font-mono">
+                No account?{' '}
+                <button onClick={() => { reset(); setTab('signup') }} className="text-indigo-500 hover:text-indigo-400 transition-colors">Create one</button>
+              </p>
+            </>
+          )}
+
+          {/* Sign Up */}
+          {tab === 'signup' && (
+            <>
+              <FieldRow label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" onKeyDown={onEnter} />
+              <FieldRow label="Password" value={password} onChange={setPassword} placeholder="Min 6 characters" show={showPw} onToggleShow={() => setShowPw(s => !s)} onKeyDown={onEnter} />
+              <button onClick={handleSignUp} disabled={loading}
+                      className="w-full py-2.5 rounded-lg text-sm font-mono font-bold transition-all mt-1"
+                      style={{ background: 'rgba(99,102,241,0.25)', color: '#a78bfa', border: '1px solid rgba(99,102,241,0.35)' }}>
+                {loading ? 'Creating account…' : 'Create Account'}
+              </button>
+              <p className="text-xs text-slate-700 text-center mt-3 font-mono">
+                Already have an account?{' '}
+                <button onClick={() => { reset(); setTab('signin') }} className="text-indigo-500 hover:text-indigo-400 transition-colors">Sign in</button>
+              </p>
+            </>
+          )}
+
+          {/* API Key (shown after login or on key tab) */}
+          {tab === 'key' && (
+            <>
+              <p className="text-xs text-slate-500 mb-4 leading-relaxed font-mono">
+                Add your{' '}
+                <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer"
+                   className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Groq API key</a>
+                {' '}for the AI Analyst. Saved to your account — syncs across devices.
+              </p>
+              <FieldRow label="Groq API Key" value={apiKey} onChange={setApiKey} placeholder="gsk_..." show={showKey} onToggleShow={() => setShowKey(s => !s)} onKeyDown={onEnter} />
+              <div className="flex gap-2 mt-1">
+                <button onClick={handleSaveKey} disabled={loading}
+                        className="flex-1 py-2.5 rounded-lg text-sm font-mono font-bold transition-all"
+                        style={{ background: 'rgba(99,102,241,0.25)', color: '#a78bfa', border: '1px solid rgba(99,102,241,0.35)' }}>
+                  {loading ? 'Saving…' : 'Save Key'}
+                </button>
+                {localStorage.getItem('sov:user_api_key') && (
+                  <button onClick={() => { setApiKey(''); handleSaveKey() }}
+                          className="px-4 py-2.5 rounded-lg text-xs font-mono transition-colors hover:text-slate-300"
+                          style={{ border: '1px solid #252538', color: '#475569' }}>
+                    Remove
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-slate-700 text-center mt-3 font-mono">
+                No key needed — the platform works without one.
+              </p>
+            </>
+          )}
+
+          {/* Account tab (logged in) */}
+          {tab === 'account' && (
+            <>
+              <div className="rounded-lg px-4 py-3 mb-4" style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)' }}>
+                <div className="text-xs text-slate-500 font-mono mb-0.5">Signed in as</div>
+                <div className="text-sm text-slate-200 font-mono font-semibold">{user?.email}</div>
+              </div>
+              <button onClick={handleLogout}
+                      className="w-full py-2.5 rounded-lg text-sm font-mono font-semibold transition-all"
+                      style={{ background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
+                Sign Out
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -461,7 +633,13 @@ function Nav() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [countries, setCountries] = useState([])
-  const [apiKeyOpen, setApiKeyOpen] = useState(false)
+  const [authOpen, setAuthOpen] = useState(false)
+  const [, forceUpdate] = useState(0)  // re-render after auth changes
+
+  const isLoggedIn = !!localStorage.getItem('sov:token')
+  const user = (() => { try { return JSON.parse(localStorage.getItem('sov:user') || 'null') } catch { return null } })()
+  const hasKey = !!localStorage.getItem('sov:user_api_key')
+  const onAuth = () => forceUpdate(n => n + 1)
 
   useEffect(() => {
     api.countries().then(setCountries).catch(() => {})
@@ -562,30 +740,34 @@ function Nav() {
             <DataFreshness />
           </div>
 
-          {/* BYOK: API key settings button */}
+          {/* Auth / account button */}
           <button
-            onClick={() => setApiKeyOpen(true)}
+            onClick={() => setAuthOpen(true)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-mono font-semibold"
             style={{
-              border: localStorage.getItem('sov:user_api_key')
-                ? '1px solid rgba(99,102,241,0.4)'
-                : '1px solid rgba(255,255,255,0.1)',
-              background: localStorage.getItem('sov:user_api_key')
-                ? 'rgba(99,102,241,0.15)'
-                : 'rgba(255,255,255,0.04)',
-              color: localStorage.getItem('sov:user_api_key') ? '#a78bfa' : '#94a3b8',
+              border: isLoggedIn ? '1px solid rgba(99,102,241,0.4)' : '1px solid rgba(255,255,255,0.1)',
+              background: isLoggedIn ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.04)',
+              color: isLoggedIn ? '#a78bfa' : '#94a3b8',
             }}
-            title="AI API Key"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="7.5" cy="15.5" r="4.5"/>
-              <path d="M21 2l-9.6 9.6M15.5 7.5L18 10"/>
-            </svg>
-            <span className="hidden sm:inline">
-              {localStorage.getItem('sov:user_api_key') ? 'API Key ✓' : 'API Key'}
-            </span>
+            {isLoggedIn ? (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                </svg>
+                <span className="hidden sm:inline max-w-[120px] truncate">{user?.email?.split('@')[0]}</span>
+                {hasKey && <span className="text-green-400 text-xs">·✓</span>}
+              </>
+            ) : (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
+                </svg>
+                <span className="hidden sm:inline">Sign In</span>
+              </>
+            )}
           </button>
-          <ApiKeyModal isOpen={apiKeyOpen} onClose={() => setApiKeyOpen(false)} />
+          <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} onAuth={onAuth} />
 
           <SearchBar countries={countries} />
 
