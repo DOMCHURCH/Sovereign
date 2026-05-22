@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react'
 import { auth } from './api'
 const Globe = lazy(() => import('./pages/Globe'))
@@ -9,7 +9,17 @@ const Analyst = lazy(() => import('./pages/Analyst'))
 const Scenario = lazy(() => import('./pages/Scenario'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Portfolio = lazy(() => import('./pages/Portfolio'))
+const Login = lazy(() => import('./pages/Login'))
 import { api, streamAnalyst } from './api'
+
+// Redirects to /login if not authenticated, preserving the intended destination
+function RequireAuth({ children }) {
+  const location = useLocation()
+  if (!localStorage.getItem('sov:token')) {
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />
+  }
+  return children
+}
 
 const TIER_COLORS = { low: '#4ade80', elevated: '#fbbf24', high: '#fb923c', severe: '#f87171' }
 
@@ -67,7 +77,7 @@ function FloatingAnalyst() {
     } catch { setStreaming(false) }
   }, [messages, streaming])
 
-  if (location.pathname === '/analyst') return null
+  if (location.pathname === '/analyst' || location.pathname === '/login') return null
 
   const SUGGESTED = ['What are the top 3 geopolitical risks right now?', 'Which emerging markets look most vulnerable?', 'Explain the contagion risk from Russia']
 
@@ -883,11 +893,12 @@ export default function App({ onReady }) {
           </div>
         }>
           <Routes>
+            <Route path="/login" element={<Login />} />
             <Route path="/" element={<Globe />} />
             <Route path="/country/:iso3" element={<Country />} />
             <Route path="/markets" element={<Markets />} />
             <Route path="/compare" element={<Compare />} />
-            <Route path="/analyst" element={<Analyst />} />
+            <Route path="/analyst" element={<RequireAuth><Analyst /></RequireAuth>} />
             <Route path="/scenario" element={<Scenario />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/portfolio" element={<Portfolio />} />
