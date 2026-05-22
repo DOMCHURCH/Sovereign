@@ -24,6 +24,7 @@ function fmt(v) {
 
 export default function Portfolio() {
   const [holdings, setHoldings] = useState([])
+  const [aum, setAum] = useState(null)
   const [impact, setImpact] = useState(null)
   const [stressResult, setStressResult] = useState(null)
   const [stressCountry, setStressCountry] = useState('CHN')
@@ -33,6 +34,7 @@ export default function Portfolio() {
   useEffect(() => {
     Promise.all([api.portfolio(), api.portfolioImpact()]).then(([p, i]) => {
       setHoldings(p.holdings || [])
+      setAum(p.aum || null)
       setImpact(i)
       setLoading(false)
     }).catch(() => setLoading(false))
@@ -84,7 +86,11 @@ export default function Portfolio() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Portfolio Risk Dashboard</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Demo portfolio · $1M AUM · 10 positions</p>
+          <p className="text-slate-500 text-sm mt-0.5">
+            Demo portfolio
+            {holdings.length > 0 && ` · ${holdings.length} positions`}
+            {aum && ` · $${aum >= 1e6 ? (aum / 1e6).toFixed(0) + 'M' : aum.toLocaleString()} AUM`}
+          </p>
         </div>
         <div className="flex items-center gap-6">
           <div className="text-center">

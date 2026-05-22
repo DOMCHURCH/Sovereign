@@ -346,7 +346,7 @@ export default function Country() {
               ))}
             </div>
           ) : (
-            <p className="text-xs text-slate-500">No contagion data — run ingest first</p>
+            <p className="text-xs text-slate-500">No contagion edges detected — this country has no significant cross-border risk linkages in the current model.</p>
           )}
         </div>
       </div>

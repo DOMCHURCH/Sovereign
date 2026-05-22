@@ -555,10 +555,11 @@ export default function Dashboard() {
   const [portfolio, setPortfolio] = useState(null)
   const [news, setNews]         = useState([])
   const [snapshot, setSnapshot] = useState(null)
+  const [conflictCount, setConflictCount] = useState(null)
 
   const loadData = useCallback(async () => {
     try {
-      const [countriesRes, alertsRes, gtiRes, portfolioRes, newsRes, snapshotRes] =
+      const [countriesRes, alertsRes, gtiRes, portfolioRes, newsRes, snapshotRes, conflictsRes] =
         await Promise.all([
           api.countries().catch(() => []),
           api.alerts().catch(() => []),
@@ -566,6 +567,7 @@ export default function Dashboard() {
           api.portfolioImpact().catch(() => null),
           api.newsFeed().catch(() => []),
           api.marketSnapshot().catch(() => null),
+          api.conflicts().catch(() => []),
         ])
 
       setCountries(countriesRes || [])
@@ -574,6 +576,7 @@ export default function Dashboard() {
       setPortfolio(portfolioRes)
       setNews(Array.isArray(newsRes) ? newsRes : (newsRes?.articles || []))
       setSnapshot(snapshotRes)
+      setConflictCount(Array.isArray(conflictsRes) ? conflictsRes.length : 0)
     } catch {
       // silent error — show empty states
     } finally {
@@ -677,11 +680,11 @@ export default function Dashboard() {
         />
         <StatCard
           label="Active Conflicts"
-          value="30"
+          value={conflictCount !== null ? String(conflictCount) : '—'}
           sub="conflicts monitored globally"
           valueColor="#fb923c"
-          onClick={() => navigate('/globe')}
-          loading={false}
+          onClick={() => navigate('/')}
+          loading={loading}
           accentColor="#fb923c"
         />
       </div>
