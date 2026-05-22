@@ -456,8 +456,8 @@ function AuthModal({ isOpen, onClose, onAuth }) {
       localStorage.setItem('sov:token', res.token)
       localStorage.setItem('sov:user', JSON.stringify({ email: res.email }))
       onAuth?.()
-      setSuccess('Account created!')
-      setTimeout(() => { setSuccess(''); setTab('key') }, 800)
+      setSuccess("You're in! The AI Analyst is ready to use.")
+      setTimeout(() => { setSuccess(''); onClose() }, 1200)
     } catch (e) {
       setError(e.message.includes('409') ? 'An account with that email already exists' : 'Registration failed — try again')
     } finally { setLoading(false) }
@@ -578,16 +578,19 @@ function AuthModal({ isOpen, onClose, onAuth }) {
             </>
           )}
 
-          {/* API Key (shown after login or on key tab) */}
+          {/* API Key (optional — shown on key tab) */}
           {tab === 'key' && (
             <>
-              <p className="text-xs text-slate-500 mb-4 leading-relaxed font-mono">
-                Add your{' '}
-                <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer"
-                   className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Groq API key</a>
-                {' '}for the AI Analyst. Saved to your account — syncs across devices.
-              </p>
-              <FieldRow label="Groq API Key" value={apiKey} onChange={setApiKey} placeholder="gsk_..." show={showKey} onToggleShow={() => setShowKey(s => !s)} onKeyDown={onEnter} />
+              <div className="mb-4 px-3 py-2.5 rounded-lg" style={{ background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.15)' }}>
+                <div className="text-xs font-mono text-green-400 font-semibold mb-0.5">✓ Platform key active</div>
+                <div className="text-xs font-mono text-slate-500 leading-relaxed">
+                  The AI Analyst works out of the box — no key needed. Optionally add your own{' '}
+                  <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer"
+                     className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Groq key</a>
+                  {' '}for dedicated rate limits.
+                </div>
+              </div>
+              <FieldRow label="Your Groq API Key (optional)" value={apiKey} onChange={setApiKey} placeholder="gsk_... (leave blank to use platform key)" show={showKey} onToggleShow={() => setShowKey(s => !s)} onKeyDown={onEnter} />
               <div className="flex gap-2 mt-1">
                 <button onClick={handleSaveKey} disabled={loading}
                         className="flex-1 py-2.5 rounded-lg text-sm font-mono font-bold transition-all"
@@ -602,9 +605,6 @@ function AuthModal({ isOpen, onClose, onAuth }) {
                   </button>
                 )}
               </div>
-              <p className="text-xs text-slate-700 text-center mt-3 font-mono">
-                No key needed — the platform works without one.
-              </p>
             </>
           )}
 
