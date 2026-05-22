@@ -643,7 +643,6 @@ function Nav() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [countries, setCountries] = useState([])
-  const [authOpen, setAuthOpen] = useState(false)
   const [, forceUpdate] = useState(0)  // re-render after auth changes
 
   const isLoggedIn = !!localStorage.getItem('sov:token')
@@ -750,34 +749,31 @@ function Nav() {
             <DataFreshness />
           </div>
 
-          {/* Auth / account button */}
-          <button
-            onClick={() => setAuthOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-mono font-semibold"
-            style={{
-              border: isLoggedIn ? '1px solid rgba(99,102,241,0.4)' : '1px solid rgba(255,255,255,0.1)',
-              background: isLoggedIn ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.04)',
-              color: isLoggedIn ? '#a78bfa' : '#94a3b8',
-            }}
-          >
-            {isLoggedIn ? (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                </svg>
-                <span className="hidden sm:inline max-w-[120px] truncate">{user?.email?.split('@')[0]}</span>
-                {hasKey && <span className="text-green-400 text-xs">·✓</span>}
-              </>
-            ) : (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
-                </svg>
-                <span className="hidden sm:inline">Sign In</span>
-              </>
-            )}
-          </button>
-          <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} onAuth={onAuth} />
+          {/* Auth button — navigates to /login or shows sign-out when logged in */}
+          {isLoggedIn ? (
+            <button
+              onClick={() => { auth.logout(); forceUpdate(n => n + 1) }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-mono font-semibold"
+              style={{ border: '1px solid rgba(99,102,241,0.4)', background: 'rgba(99,102,241,0.15)', color: '#a78bfa' }}
+              title="Sign out"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+              </svg>
+              <span className="hidden sm:inline max-w-[120px] truncate">{user?.email?.split('@')[0]}</span>
+              {hasKey && <span className="text-green-400 text-xs">·✓</span>}
+            </button>
+          ) : (
+            <NavLink to="/login"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-mono font-semibold"
+              style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: '#94a3b8' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
+              </svg>
+              <span className="hidden sm:inline">Sign In</span>
+            </NavLink>
+          )}
 
           <SearchBar countries={countries} />
 
