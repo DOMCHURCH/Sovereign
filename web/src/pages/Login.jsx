@@ -323,9 +323,8 @@ export default function Login() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <button onClick={confirmSkip}
                 style={{
-                  padding: '13px', borderRadius: 12, border: 'none', cursor: 'pointer',
+                  padding: '13px', borderRadius: 12, border: '1px solid rgba(99,102,241,0.3)', cursor: 'pointer',
                   background: 'rgba(99,102,241,0.15)', color: '#a78bfa',
-                  border: '1px solid rgba(99,102,241,0.3)',
                   fontSize: 13, fontWeight: 600, fontFamily: 'monospace',
                 }}>
                 Continue anyway →
