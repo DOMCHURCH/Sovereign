@@ -5,6 +5,7 @@ import hmac
 import hashlib
 import base64
 import bcrypt
+import httpx
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -16,13 +17,51 @@ _bearer = HTTPBearer(auto_error=False)
 JWT_SECRET = os.getenv("JWT_SECRET", "sovereign-dev-secret-change-in-prod")
 JWT_EXPIRY = 30  # days
 
+TURSO_URL   = os.getenv("TURSO_DATABASE_URL", "")
+TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
 
-# ── DuckDB helpers ────────────────────────────────────────────────────────────
 
-def _db():
-    """Return the shared DuckDB connection for this thread."""
-    from db import get_conn
-    return get_conn()
+# ── Turso HTTP client ────────────────────────────────────────────────────────
+
+def _turso(sql: str, args: list = None) -> list[dict]:
+    """Execute a single SQL statement via Turso HTTP API. Returns rows as dicts."""
+    if not TURSO_URL or not TURSO_TOKEN:
+        raise RuntimeError("TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are not configured — set them in Render environment variables")
+
+    stmt: dict = {"sql": sql}
+    if args:
+        stmt["args"] = [{"type": "text", "value": str(a)} if a is not None else {"type": "null"} for a in args]
+
+    resp = httpx.post(
+        f"{TURSO_URL}/v2/pipeline",
+        headers={"Authorization": f"Bearer {TURSO_TOKEN}", "Content-Type": "application/json"},
+        json={"requests": [{"type": "execute", "stmt": stmt}, {"type": "close"}]},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    result = resp.json()["results"][0]
+    if result.get("type") == "error":
+        raise RuntimeError(result.get("error", {}).get("message", "Turso error"))
+
+    cols = [c["name"] for c in result.get("response", {}).get("result", {}).get("cols", [])]
+    rows = result.get("response", {}).get("result", {}).get("rows", [])
+    return [dict(zip(cols, [v.get("value") for v in row])) for row in rows]
+
+
+def _turso_setup():
+    """Create users table if it doesn't exist."""
+    try:
+        _turso("""
+            CREATE TABLE IF NOT EXISTS users (
+                id            TEXT PRIMARY KEY,
+                email         TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                groq_api_key  TEXT,
+                created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+    except Exception as e:
+        print(f"[auth] Turso setup warning: {e}")
 
 
 # ── JWT (stdlib only — no cryptography dep) ──────────────────────────────────
@@ -98,16 +137,12 @@ def register(req: RegisterRequest):
         raise HTTPException(400, "Password must be at least 6 characters")
     email = req.email.strip().lower()
     try:
-        conn = _db()
-        existing = conn.execute("SELECT id FROM users WHERE email = ?", [email]).fetchone()
+        existing = _turso("SELECT id FROM users WHERE email = ?", [email])
         if existing:
             raise HTTPException(409, "An account with that email already exists")
         pw_hash = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
         user_id = str(uuid.uuid4())
-        conn.execute(
-            "INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)",
-            [user_id, email, pw_hash],
-        )
+        _turso("INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)", [user_id, email, pw_hash])
     except HTTPException:
         raise
     except Exception as e:
@@ -120,40 +155,32 @@ def register(req: RegisterRequest):
 def login(req: LoginRequest):
     email = req.email.strip().lower()
     try:
-        conn = _db()
-        row = conn.execute(
-            "SELECT id, email, password_hash, groq_api_key FROM users WHERE email = ?",
-            [email],
-        ).fetchone()
+        rows = _turso("SELECT id, email, password_hash, groq_api_key FROM users WHERE email = ?", [email])
     except Exception as e:
         raise HTTPException(500, f"Login failed: {e}")
-    if not row or not bcrypt.checkpw(req.password.encode(), row[2].encode()):
+    if not rows or not bcrypt.checkpw(req.password.encode(), rows[0]["password_hash"].encode()):
         raise HTTPException(401, "Invalid email or password")
-    token = _make_token(row[0], row[1])
-    return {"token": token, "email": row[1], "groq_api_key": row[3]}
+    row = rows[0]
+    token = _make_token(row["id"], row["email"])
+    return {"token": token, "email": row["email"], "groq_api_key": row.get("groq_api_key")}
 
 
 @router.get("/me")
 def me(user: dict = Depends(require_user)):
     try:
-        conn = _db()
-        row = conn.execute(
-            "SELECT email, groq_api_key FROM users WHERE id = ?",
-            [user["id"]],
-        ).fetchone()
+        rows = _turso("SELECT email, groq_api_key FROM users WHERE id = ?", [user["id"]])
     except Exception as e:
         raise HTTPException(500, f"Lookup failed: {e}")
-    if not row:
+    if not rows:
         raise HTTPException(404, "User not found")
-    return {"email": row[0], "groq_api_key": row[1]}
+    return {"email": rows[0]["email"], "groq_api_key": rows[0].get("groq_api_key")}
 
 
 @router.post("/update-key")
 def update_key(req: UpdateKeyRequest, user: dict = Depends(require_user)):
     val = req.groq_api_key.strip() or None
     try:
-        conn = _db()
-        conn.execute("UPDATE users SET groq_api_key = ? WHERE id = ?", [val, user["id"]])
+        _turso("UPDATE users SET groq_api_key = ? WHERE id = ?", [val, user["id"]])
     except Exception as e:
         raise HTTPException(500, f"Update failed: {e}")
     return {"ok": True}

@@ -34,9 +34,8 @@ app.include_router(auth_router, prefix="/api")
 # Auto-trigger ingest on startup if data is stale (>6 hours old)
 @app.on_event("startup")
 async def _startup():
-    # Ensure users table exists (db.py _init_schema handles it, but be explicit)
-    from db import get_conn
-    get_conn()  # triggers _init_schema which creates users table if missing
+    from auth import _turso_setup
+    _turso_setup()
 
 @app.on_event("startup")
 async def _startup_ingest():
