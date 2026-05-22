@@ -490,10 +490,10 @@ function AuthModal({ isOpen, onClose, onAuth }) {
 
   return (
     <div className="fixed z-[100] flex items-center justify-center p-4"
-         style={{ inset: 0, top: 48, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
+         style={{ inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
          onClick={onClose}>
       <div className="w-full max-w-sm rounded-2xl overflow-y-auto fade-in"
-           style={{ background: '#0b0b16', border: '1px solid #252538', boxShadow: '0 32px 80px rgba(0,0,0,0.9)', maxHeight: 'calc(100vh - 120px)' }}
+           style={{ background: '#0b0b16', border: '1px solid #252538', boxShadow: '0 32px 80px rgba(0,0,0,0.9)', maxHeight: 'calc(100vh - 120px)', marginTop: '48px' }}
            onClick={e => e.stopPropagation()}>
 
         {/* Header */}
