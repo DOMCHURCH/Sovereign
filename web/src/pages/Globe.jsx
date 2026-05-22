@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import GlobeGL from 'react-globe.gl'
+import * as THREE from 'three'
 import { api } from '../api'
 import RiskBadge from '../components/RiskBadge'
 import AlertFeed from '../components/AlertFeed'
@@ -244,6 +245,15 @@ export default function Globe() {
   const [viewMode, setViewMode] = useState('risk')   // 'risk' | 'conflict' | 'contagion'
   const [gtiAll, setGtiAll] = useState([])
   const globeRef = useRef(null)
+
+  // Dark-navy globe material — no CDN image dependency, renders on all devices.
+  // THREE is a transitive dep of react-globe.gl so it's already in the bundle.
+  const globeMaterial = useMemo(() => new THREE.MeshPhongMaterial({
+    color:    new THREE.Color(0x0b1a30),
+    emissive: new THREE.Color(0x040c18),
+    shininess: 12,
+    specular:  new THREE.Color(0x1a3a6a),
+  }), [])
   const navigate = useNavigate()
 
   // Data fetching
@@ -540,18 +550,6 @@ export default function Globe() {
         />
       )}
 
-      {/* Mobile sidebar toggle button */}
-      {isMobile && (
-        <button
-          onClick={() => setSidebarOpen(o => !o)}
-          className="absolute top-3 right-3 z-40 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-mono font-semibold"
-          style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.35)', color: '#a78bfa' }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-          Intel
-        </button>
-      )}
-
       {/* Globe area */}
       <div className="flex-1 relative overflow-hidden">
         <GlobeGL
@@ -560,10 +558,9 @@ export default function Globe() {
           height={dims.h}
           onGlobeReady={onGlobeReady}
           backgroundColor="#070710"
-          backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
-          globeImageUrl="//cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg"
-          atmosphereColor="#a78bfa"
-          atmosphereAltitude={0.25}
+          globeMaterial={globeMaterial}
+          atmosphereColor="#6366f1"
+          atmosphereAltitude={0.22}
           polygonsData={geoData}
           polygonCapColor={polygonColor}
           polygonSideColor={polygonSideColor}
@@ -622,23 +619,40 @@ export default function Globe() {
           ringAltitude={0.01}
         />
 
+        {/* ── Mobile Intel sidebar toggle (top-right, inside globe area) ── */}
+        {isMobile && (
+          <button
+            onClick={() => setSidebarOpen(o => !o)}
+            className="absolute top-3 right-3 z-40 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-mono font-semibold"
+            style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.35)', color: '#a78bfa' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+            </svg>
+            Intel
+          </button>
+        )}
+
         {/* ── View mode toggle (top-left) ────────────────────────────────── */}
         <div className="absolute top-3 left-3 z-10 flex rounded-lg overflow-hidden"
-             style={{ background: 'rgba(7,7,16,0.88)', border: '1px solid #1e2d3d', backdropFilter: 'blur(10px)' }}>
+             style={{ background: 'rgba(7,7,16,0.88)', border: '1px solid #1e2d3d', backdropFilter: 'blur(10px)', maxWidth: 'calc(100vw - 6rem)' }}>
           {[
             { mode: 'risk',      label: 'Risk' },
             { mode: 'conflict',  label: 'Conflict' },
-            { mode: 'contagion', label: 'Contagion' },
+            { mode: 'contagion', label: isMobile ? 'Conta.' : 'Contagion' },
           ].map(({ mode, label }, i) => (
             <button
               key={mode}
               onClick={() => setViewMode(mode)}
-              className="px-3 py-1.5 text-xs font-mono font-semibold transition-all duration-200"
+              className="py-1.5 text-xs font-mono font-semibold transition-all duration-200"
               style={{
+                padding: isMobile ? '6px 10px' : '6px 12px',
                 background: viewMode === mode ? 'rgba(99,102,241,0.25)' : 'transparent',
                 color: viewMode === mode ? '#a78bfa' : '#475569',
                 borderRight: i < 2 ? '1px solid #1e2d3d' : 'none',
-                letterSpacing: '0.05em',
+                letterSpacing: '0.04em',
+                whiteSpace: 'nowrap',
               }}
             >
               {label}
