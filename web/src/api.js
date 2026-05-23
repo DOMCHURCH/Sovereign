@@ -25,8 +25,9 @@ async function post(path, body) {
 
 // ── Auth helpers ───────────────────────────────────────────────────────────────
 export const auth = {
-  register:  (email, password) => post('/auth/register', { email, password }),
-  login:     (email, password) => post('/auth/login',    { email, password }),
+  register:  (email, password, first_name = '', last_name = '', role = '') =>
+               post('/auth/register', { email, password, first_name, last_name, role }),
+  login:     (email, password) => post('/auth/login', { email, password }),
   me:        ()                => get('/auth/me'),
   updateKey: (groq_api_key)   => post('/auth/update-key', { groq_api_key }),
   logout: () => {

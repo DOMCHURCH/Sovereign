@@ -49,17 +49,26 @@ def _turso(sql: str, args: list = None) -> list[dict]:
 
 
 def _turso_setup():
-    """Create users table if it doesn't exist."""
+    """Create users table and migrate schema if needed."""
     try:
         _turso("""
             CREATE TABLE IF NOT EXISTS users (
                 id            TEXT PRIMARY KEY,
                 email         TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
+                first_name    TEXT,
+                last_name     TEXT,
+                role          TEXT,
                 groq_api_key  TEXT,
                 created_at    TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        # Migrate existing tables that may be missing the new columns
+        for col, defn in [("first_name", "TEXT"), ("last_name", "TEXT"), ("role", "TEXT")]:
+            try:
+                _turso(f"ALTER TABLE users ADD COLUMN {col} {defn}")
+            except Exception:
+                pass  # column already exists
     except Exception as e:
         print(f"[auth] Turso setup warning: {e}")
 
@@ -120,6 +129,9 @@ def require_user(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict
 class RegisterRequest(BaseModel):
     email: str
     password: str
+    first_name: str = ""
+    last_name: str = ""
+    role: str = ""
 
 class LoginRequest(BaseModel):
     email: str
@@ -142,13 +154,16 @@ def register(req: RegisterRequest):
             raise HTTPException(409, "An account with that email already exists")
         pw_hash = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
         user_id = str(uuid.uuid4())
-        _turso("INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)", [user_id, email, pw_hash])
+        _turso(
+            "INSERT INTO users (id, email, password_hash, first_name, last_name, role) VALUES (?, ?, ?, ?, ?, ?)",
+            [user_id, email, pw_hash, req.first_name.strip(), req.last_name.strip(), req.role.strip()],
+        )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(500, f"Registration failed: {e}")
     token = _make_token(user_id, email)
-    return {"token": token, "email": email, "groq_api_key": None}
+    return {"token": token, "email": email, "first_name": req.first_name.strip(), "last_name": req.last_name.strip(), "groq_api_key": None}
 
 
 @router.post("/login")
