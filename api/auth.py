@@ -30,6 +30,8 @@ def _turso(sql: str, args: list = None) -> list[dict]:
 
     # Turso gives libsql:// URLs in the dashboard — HTTP API needs https://
     base_url = TURSO_URL.replace("libsql://", "https://", 1)
+
+    stmt: dict = {"sql": sql}
     if args:
         stmt["args"] = [{"type": "text", "value": str(a)} if a is not None else {"type": "null"} for a in args]
 
