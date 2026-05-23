@@ -28,12 +28,13 @@ def _turso(sql: str, args: list = None) -> list[dict]:
     if not TURSO_URL or not TURSO_TOKEN:
         raise RuntimeError("TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are not configured — set them in Render environment variables")
 
-    stmt: dict = {"sql": sql}
+    # Turso gives libsql:// URLs in the dashboard — HTTP API needs https://
+    base_url = TURSO_URL.replace("libsql://", "https://", 1)
     if args:
         stmt["args"] = [{"type": "text", "value": str(a)} if a is not None else {"type": "null"} for a in args]
 
     resp = httpx.post(
-        f"{TURSO_URL}/v2/pipeline",
+        f"{base_url}/v2/pipeline",
         headers={"Authorization": f"Bearer {TURSO_TOKEN}", "Content-Type": "application/json"},
         json={"requests": [{"type": "execute", "stmt": stmt}, {"type": "close"}]},
         timeout=10,
