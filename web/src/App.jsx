@@ -10,6 +10,7 @@ const Scenario = lazy(() => import('./pages/Scenario'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Portfolio = lazy(() => import('./pages/Portfolio'))
 const Login = lazy(() => import('./pages/Login'))
+const Account = lazy(() => import('./pages/Account'))
 import { api, streamAnalyst } from './api'
 
 // Redirects to /login if not authenticated, preserving the intended destination
@@ -179,6 +180,186 @@ function FloatingAnalyst() {
         </>
       )}
     </>
+  )
+}
+
+// ── Onboarding Tour ───────────────────────────────────────────────────────────
+const TOUR_STEPS = [
+  {
+    title: 'Welcome to Sovereign',
+    body: 'A live geopolitical risk intelligence platform tracking 50+ countries — built for institutional analysts, risk managers, and portfolio managers.',
+    icon: '🌍',
+    cta: 'Take a quick tour',
+  },
+  {
+    title: 'Live Risk Globe',
+    body: 'Every country is scored 0–100 across political instability, macro stress, sanctions exposure, and market volatility — updated every 15 minutes. Click any country for a full breakdown.',
+    icon: '🗺️',
+    highlight: 'Globe',
+  },
+  {
+    title: 'AI Analyst',
+    body: 'Ask anything in natural language. The analyst has live risk scores, contagion data, and news context injected — so answers are grounded in real data, not general knowledge.',
+    icon: '🤖',
+    highlight: 'Analyst',
+  },
+  {
+    title: 'Scenario Engine',
+    body: 'Simulate shocks — military escalation, debt default, sanctions — and see the contagion ripple through the network and land on your portfolio in real time.',
+    icon: '⚡',
+    highlight: 'Scenario',
+  },
+  {
+    title: 'Portfolio Stress Test',
+    body: 'Country ETF holdings are tracked against live risk deltas. Run historical presets (2008 GFC, COVID-2020) or build a custom shock to estimate P&L impact.',
+    icon: '📊',
+    highlight: 'Portfolio',
+  },
+]
+
+function OnboardingTour() {
+  const [step, setStep] = useState(0)
+  const [visible, setVisible] = useState(false)
+  const [animIn, setAnimIn] = useState(false)
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    if (location.pathname === '/login') return
+    const toured = localStorage.getItem('sov:toured')
+    if (!toured) {
+      const t = setTimeout(() => {
+        setVisible(true)
+        setTimeout(() => setAnimIn(true), 30)
+      }, 1200)
+      return () => clearTimeout(t)
+    }
+  }, [location.pathname])
+
+  const dismiss = () => {
+    setAnimIn(false)
+    setTimeout(() => setVisible(false), 300)
+    localStorage.setItem('sov:toured', '1')
+  }
+
+  const next = () => {
+    if (step < TOUR_STEPS.length - 1) {
+      setStep(s => s + 1)
+    } else {
+      dismiss()
+    }
+  }
+
+  if (!visible) return null
+
+  const s = TOUR_STEPS[step]
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-end justify-center md:items-center p-4 pb-6"
+      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      onClick={dismiss}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 420,
+          background: 'rgba(11,11,22,0.98)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 20,
+          boxShadow: '0 32px 80px rgba(0,0,0,0.8)',
+          opacity: animIn ? 1 : 0,
+          transform: animIn ? 'translateY(0) scale(1)' : 'translateY(16px) scale(0.97)',
+          transition: 'opacity 0.3s ease, transform 0.3s ease',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Progress bar */}
+        <div style={{ height: 2, background: 'rgba(255,255,255,0.06)' }}>
+          <div
+            style={{
+              height: '100%',
+              background: 'linear-gradient(90deg, #6366f1, #a78bfa)',
+              width: `${((step + 1) / TOUR_STEPS.length) * 100}%`,
+              transition: 'width 0.4s ease',
+            }}
+          />
+        </div>
+
+        <div className="p-6">
+          {/* Icon + step */}
+          <div className="flex items-center justify-between mb-4">
+            <span style={{ fontSize: 32, lineHeight: 1 }}>{s.icon}</span>
+            <div className="flex items-center gap-1.5">
+              {TOUR_STEPS.map((_, i) => (
+                <div
+                  key={i}
+                  onClick={() => setStep(i)}
+                  style={{
+                    width: i === step ? 16 : 6,
+                    height: 6,
+                    borderRadius: 3,
+                    background: i === step ? '#6366f1' : 'rgba(255,255,255,0.12)',
+                    transition: 'all 0.2s',
+                    cursor: 'pointer',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: '#f1f5f9', marginBottom: 10, fontFamily: 'monospace' }}>
+            {s.title}
+          </h3>
+          <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.7, marginBottom: 20 }}>
+            {s.body}
+          </p>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={next}
+              style={{
+                flex: 1,
+                padding: '12px',
+                borderRadius: 12,
+                border: 'none',
+                cursor: 'pointer',
+                background: 'linear-gradient(135deg, #6366f1, #7c3aed)',
+                color: 'white',
+                fontSize: 13,
+                fontWeight: 700,
+                fontFamily: 'monospace',
+                boxShadow: '0 4px 16px rgba(99,102,241,0.35)',
+              }}
+            >
+              {step === 0
+                ? s.cta
+                : step === TOUR_STEPS.length - 1
+                  ? 'Get Started →'
+                  : 'Next →'}
+            </button>
+            {step > 0 && (
+              <button
+                onClick={dismiss}
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: 'transparent',
+                  color: '#475569',
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  cursor: 'pointer',
+                }}
+              >
+                Skip
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -749,20 +930,22 @@ function Nav() {
             <DataFreshness />
           </div>
 
-          {/* Auth button — navigates to /login or shows sign-out when logged in */}
+          {/* Auth button — goes to /account when logged in, /login when not */}
           {isLoggedIn ? (
-            <button
-              onClick={() => { auth.logout(); forceUpdate(n => n + 1) }}
+            <NavLink
+              to="/account"
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-mono font-semibold"
               style={{ border: '1px solid rgba(99,102,241,0.4)', background: 'rgba(99,102,241,0.15)', color: '#a78bfa' }}
-              title="Sign out"
+              title="Account"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
               </svg>
-              <span className="hidden sm:inline max-w-[120px] truncate">{user?.email?.split('@')[0]}</span>
+              <span className="hidden sm:inline max-w-[120px] truncate">
+                {user?.firstName || user?.email?.split('@')[0]}
+              </span>
               {hasKey && <span className="text-green-400 text-xs">·✓</span>}
-            </button>
+            </NavLink>
           ) : (
             <NavLink to="/login"
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-mono font-semibold"
@@ -869,6 +1052,7 @@ export default function App({ onReady }) {
     <BrowserRouter>
       <Nav />
       <FloatingAnalyst />
+      <OnboardingTour />
       <div style={{ paddingTop: '48px', minHeight: '100vh' }}>
         <Suspense fallback={
           <div className="flex items-center justify-center h-screen" style={{ background: '#070710' }}>
@@ -898,6 +1082,7 @@ export default function App({ onReady }) {
             <Route path="/scenario" element={<Scenario />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
           </Routes>
         </Suspense>
       </div>
