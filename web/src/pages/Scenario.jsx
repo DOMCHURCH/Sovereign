@@ -253,7 +253,7 @@ export default function Scenario() {
             Scenario Builder
           </div>
 
-          <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
             {/* Column 1 — Target Country */}
             <div className="flex flex-col gap-2">
@@ -418,7 +418,7 @@ export default function Scenario() {
               </div>
 
               {/* Example scenario cards */}
-              <div className="grid gap-3 w-full" style={{ gridTemplateColumns: 'repeat(3, 1fr)', maxWidth: 680 }}>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full" style={{ maxWidth: 680 }}>
                 {EXAMPLE_SCENARIOS.map(ex => (
                   <button
                     key={ex.label}
@@ -457,12 +457,12 @@ export default function Scenario() {
         {/* ── Running skeleton ── */}
         {isRunning && (
           <div className="fade-in space-y-4">
-            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[0, 1, 2].map(i => (
                 <div key={i} className="shimmer glass-card rounded-xl h-28" />
               ))}
             </div>
-            <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="shimmer glass-card rounded-xl h-64" />
               <div className="shimmer glass-card rounded-xl h-64" />
             </div>
@@ -475,7 +475,7 @@ export default function Scenario() {
           <div className="fade-in space-y-5">
 
             {/* Row 1: Summary cards */}
-            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <SummaryCard
                 label="Portfolio Impact"
                 value={
@@ -501,7 +501,7 @@ export default function Scenario() {
             </div>
 
             {/* Row 2: Contagion + Portfolio */}
-            <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
               {/* Contagion Spread */}
               <div className="glass-card card-accent-top rounded-xl p-5">
@@ -518,7 +518,7 @@ export default function Scenario() {
                     <div
                       className="grid text-xs font-mono text-slate-600 uppercase tracking-wider pb-2 mb-1"
                       style={{
-                        gridTemplateColumns: '3.5rem 1fr 5rem 7rem',
+                        gridTemplateColumns: '3rem 1fr 4rem 6rem',
                         borderBottom: '1px solid rgba(255,255,255,0.05)',
                       }}
                     >
@@ -538,7 +538,7 @@ export default function Scenario() {
                           onClick={() => navigate(`/country/${iso}`)}
                           className="grid w-full text-left rounded-lg px-0 py-1.5 transition-colors"
                           style={{
-                            gridTemplateColumns: '3.5rem 1fr 5rem 7rem',
+                            gridTemplateColumns: '3rem 1fr 4rem 6rem',
                           }}
                           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
                           onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
@@ -584,7 +584,7 @@ export default function Scenario() {
                       <div
                         className="grid text-xs font-mono text-slate-600 uppercase tracking-wider pb-2 mb-1"
                         style={{
-                          gridTemplateColumns: '4.5rem 1fr 5rem 7rem',
+                          gridTemplateColumns: '4rem 1fr 4rem 5rem',
                           borderBottom: '1px solid rgba(255,255,255,0.05)',
                         }}
                       >

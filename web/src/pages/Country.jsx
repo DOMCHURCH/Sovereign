@@ -228,7 +228,7 @@ export default function Country() {
       )}
 
       {/* Top row: sub-scores + macro stats */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Sub-score bar chart */}
         <div className="glass-card rounded-xl p-4">
           <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-3">Risk Factor Breakdown</h3>
@@ -288,7 +288,7 @@ export default function Country() {
       )}
 
       {/* Bottom row: portfolio + alerts + contagion */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Portfolio */}
         <div className="glass-card rounded-xl p-4">
           <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-3">Portfolio Exposure</h3>

@@ -156,7 +156,7 @@ export default function Markets() {
       {/* Commodities */}
       <div>
         <h2 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-3">Commodities</h2>
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {COMMODITIES.map(c => (
             <div key={c.ticker} className="rounded-lg border p-3 text-center" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
               <div className="font-mono font-bold text-slate-200 text-sm">{c.ticker}</div>

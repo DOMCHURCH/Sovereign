@@ -153,7 +153,7 @@ export default function Portfolio() {
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Tier breakdown pie */}
         <div className="rounded-xl border p-4" style={{ background: '#12121a', borderColor: '#1e1e2e' }}>
           <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-3">Exposure by Risk Tier</h3>
@@ -256,7 +256,7 @@ export default function Portfolio() {
               </div>
             </div>
             {stressResult.position_attribution?.length > 0 && (
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 {stressResult.position_attribution.slice(0, 6).map(p => (
                   <div key={p.ticker} className="flex justify-between">
                     <span className="font-mono text-indigo-400">{p.ticker}</span>
