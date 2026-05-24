@@ -33,6 +33,7 @@ export const auth = {
   logout: () => {
     localStorage.removeItem('sov:token')
     localStorage.removeItem('sov:user')
+    localStorage.removeItem('sov:user_api_key')
   },
 }
 

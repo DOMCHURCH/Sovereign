@@ -36,21 +36,36 @@ export default function Account() {
   const [keyError, setKeyError] = useState('')
 
   useEffect(() => {
-    if (!localStorage.getItem('sov:token')) navigate('/login', { replace: true })
+    if (!localStorage.getItem('sov:token')) { navigate('/login', { replace: true }); return }
+    // Always load the key from the server so it works across devices/browsers
+    auth.me().then(data => {
+      const serverKey = data.groq_api_key || ''
+      setApiKey(serverKey)
+      if (serverKey) localStorage.setItem('sov:user_api_key', serverKey)
+      else           localStorage.removeItem('sov:user_api_key')
+    }).catch(() => {})
   }, [])
 
   const handleSaveKey = async () => {
     setSaving(true); setKeyError(''); setSaved(false)
+    const trimmed = apiKey.trim()
     try {
-      await auth.updateKey(apiKey.trim())
-      apiKey.trim()
-        ? localStorage.setItem('sov:user_api_key', apiKey.trim())
+      await auth.updateKey(trimmed)
+      trimmed
+        ? localStorage.setItem('sov:user_api_key', trimmed)
         : localStorage.removeItem('sov:user_api_key')
+      setApiKey(trimmed)
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch {
       setKeyError('Failed to save — check your connection')
     } finally { setSaving(false) }
+  }
+
+  const handleRemoveKey = async () => {
+    setApiKey('')
+    localStorage.removeItem('sov:user_api_key')
+    try { await auth.updateKey('') } catch {}
   }
 
   const handleLogout = () => {
@@ -103,7 +118,7 @@ export default function Account() {
         </p>
 
         {/* Status banner */}
-        {localStorage.getItem('sov:user_api_key') ? (
+        {apiKey ? (
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg mb-4 text-xs font-mono"
                style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', color: '#4ade80' }}>
             <span>✓</span>
@@ -167,7 +182,7 @@ export default function Account() {
           )}
           {apiKey && (
             <button
-              onClick={() => { setApiKey(''); localStorage.removeItem('sov:user_api_key') }}
+              onClick={handleRemoveKey}
               className="text-xs text-slate-600 hover:text-slate-400 transition-colors font-mono"
             >
               Remove key and use platform default
