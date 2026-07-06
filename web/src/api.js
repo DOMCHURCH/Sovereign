@@ -1,14 +1,7 @@
 const BASE = import.meta.env.VITE_API_URL || '/api'
 
-function _authHeaders(extra = {}) {
-  const token = localStorage.getItem('sov:token')
-  return token
-    ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...extra }
-    : { 'Content-Type': 'application/json', ...extra }
-}
-
 async function get(path) {
-  const res = await fetch(`${BASE}${path}`, { headers: _authHeaders() })
+  const res = await fetch(`${BASE}${path}`, { headers: { 'Content-Type': 'application/json' } })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return res.json()
 }
@@ -16,25 +9,11 @@ async function get(path) {
 async function post(path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: _authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return res.json()
-}
-
-// ── Auth helpers ───────────────────────────────────────────────────────────────
-export const auth = {
-  register:  (email, password, first_name = '', last_name = '', role = '') =>
-               post('/auth/register', { email, password, first_name, last_name, role }),
-  login:     (email, password) => post('/auth/login', { email, password }),
-  me:        ()                => get('/auth/me'),
-  updateKey: (groq_api_key)   => post('/auth/update-key', { groq_api_key }),
-  logout: () => {
-    localStorage.removeItem('sov:token')
-    localStorage.removeItem('sov:user')
-    localStorage.removeItem('sov:user_api_key')
-  },
 }
 
 // ── Stale-while-revalidate localStorage cache ──────────────────────────────
@@ -124,15 +103,9 @@ export const api = {
 }
 
 export async function streamAnalyst(message, history, countryContext, onChunk, onDone) {
-  const headers = { 'Content-Type': 'application/json' }
-  const token = localStorage.getItem('sov:token')
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  const userKey = localStorage.getItem('sov:user_api_key')
-  if (userKey) headers['X-API-Key'] = userKey
-
   const res = await fetch(`${BASE}/analyst`, {
     method: 'POST',
-    headers,
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message, history, country_context: countryContext }),
   })
 
