@@ -469,6 +469,17 @@ export default function Globe() {
     return TIER_COLORS[tier] || TIER_COLORS.none
   }, [byIso3, viewMode, conflictsByCountry, contagionScores])
 
+  // Name + score for the fallback globe's hover tooltip
+  const fallbackLabel = useCallback((feat) => {
+    const iso3 = getIso3(feat)
+    const c = iso3 ? byIso3[iso3] : null
+    return {
+      name: c?.name || feat?.properties?.ADMIN || feat?.properties?.NAME || 'Unknown',
+      score: c?.sovereign_risk_score ?? null,
+      tier: c?.risk_tier || null,
+    }
+  }, [byIso3])
+
   // The 3D renderer threw (context creation failed at init despite the probe).
   const handleGlobeError = useCallback(() => setGlobeCrashed(true), [])
 
@@ -576,9 +587,9 @@ export default function Globe() {
     { key: 'geo',       label: 'GEOSPATIAL LAYER',     done: geoData.length > 0 },
     { key: 'countries', label: 'COUNTRY RISK DATA',     done: countries.length > 0 },
     { key: 'conflicts', label: 'CONFLICT INTELLIGENCE', done: conflicts.length > 0 },
-    // In 2D-fallback mode the WebGL engine never signals ready, so treat the
+    // In fallback mode the WebGL engine never signals ready, so treat the
     // stage as satisfied once we've committed to the fallback (gated by geo data).
-    { key: 'engine',    label: useFallback ? '2D MAP ENGINE' : 'RENDERING ENGINE',
+    { key: 'engine',    label: useFallback ? 'SIMULATION ENGINE' : 'RENDERING ENGINE',
       done: globeReady || (useFallback && geoData.length > 0) },
   ]
   const loadDone = loadStages.filter(s => s.done).length
@@ -618,8 +629,10 @@ export default function Globe() {
               colorFor={mapFillColor}
               conflicts={conflicts}
               conflictColor={conflictColor}
+              arcs={arcsData}
+              labelFor={fallbackLabel}
               onSelectFeature={handleClick}
-              viewMode={viewMode}
+              onSelectConflict={handlePointClick}
               reason={globeCrashed ? 'crashed' : 'unsupported'}
               onRetry={retry3D}
             />
