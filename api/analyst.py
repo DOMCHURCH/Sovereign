@@ -7,7 +7,7 @@ from db import get_conn
 # Provider routing — priority: GROQ_API_KEY > CEREBRAS_API_KEY (legacy, retiring May 2026)
 # User-provided BYOK key always routes to Groq
 GROQ_BASE_URL      = "https://api.groq.com/openai/v1"
-GROQ_MODEL         = "llama-3.3-70b-versatile"
+GROQ_MODEL         = "llama-3.1-8b-instant"
 CEREBRAS_BASE_URL  = "https://api.cerebras.ai/v1"
 CEREBRAS_MODEL     = "llama3.1-8b"
 
