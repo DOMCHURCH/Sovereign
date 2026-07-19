@@ -5,6 +5,9 @@ import * as THREE from 'three'
 import { api } from '../api'
 import RiskBadge from '../components/RiskBadge'
 import AlertFeed from '../components/AlertFeed'
+import ErrorBoundary from '../components/ErrorBoundary'
+import GlobeFallback from '../components/GlobeFallback'
+import { isWebGLAvailable } from '../lib/webgl'
 import {
   buildConflictsByCountry, getConflictViewColor,
   computeContagionScores, getContagionViewColor,
@@ -246,6 +249,12 @@ export default function Globe() {
   const [showWeather, setShowWeather] = useState(true)
   const [viewMode, setViewMode] = useState('risk')   // 'risk' | 'conflict' | 'contagion'
   const [gtiAll, setGtiAll] = useState([])
+  // WebGL / 3D-globe health. `webglOK` is probed up front; `globeCrashed` is set
+  // if the 3D renderer throws during init even though the probe passed (e.g. the
+  // AMD "BindToCurrentSequence failed" case). Either one flips us to the 2D map.
+  const [webglOK, setWebglOK] = useState(() => isWebGLAvailable())
+  const [globeCrashed, setGlobeCrashed] = useState(false)
+  const useFallback = !webglOK || globeCrashed
   const globeRef = useRef(null)
 
   // Dark-navy globe material — no CDN image dependency, renders on all devices.
@@ -449,6 +458,27 @@ export default function Globe() {
     return hexToRgba(color, isHov ? 0.95 : (TIER_CAP_ALPHA[tier] ?? 0.5))
   }, [byIso3, hovered, viewMode, conflictsByCountry, contagionScores])
 
+  // Solid fill for the 2D fallback map — same view-mode logic as the 3D globe,
+  // minus the hover alpha (the fallback handles hover itself).
+  const mapFillColor = useCallback((feat) => {
+    const iso3 = getIso3(feat)
+    const c = iso3 ? byIso3[iso3] : null
+    if (viewMode === 'conflict') return getConflictViewColor(iso3, conflictsByCountry, c)
+    if (viewMode === 'contagion') return getContagionViewColor(iso3, contagionScores)
+    const tier = c?.risk_tier || 'none'
+    return TIER_COLORS[tier] || TIER_COLORS.none
+  }, [byIso3, viewMode, conflictsByCountry, contagionScores])
+
+  // The 3D renderer threw (context creation failed at init despite the probe).
+  const handleGlobeError = useCallback(() => setGlobeCrashed(true), [])
+
+  // Let the user re-attempt the 3D globe (e.g. after re-enabling GPU accel).
+  const retry3D = useCallback(() => {
+    const ok = isWebGLAvailable()
+    setWebglOK(ok)
+    if (ok) setGlobeCrashed(false)
+  }, [])
+
   const polygonSideColor = useCallback((feat) => {
     const iso3 = getIso3(feat)
     const c = iso3 ? byIso3[iso3] : null
@@ -546,10 +576,26 @@ export default function Globe() {
     { key: 'geo',       label: 'GEOSPATIAL LAYER',     done: geoData.length > 0 },
     { key: 'countries', label: 'COUNTRY RISK DATA',     done: countries.length > 0 },
     { key: 'conflicts', label: 'CONFLICT INTELLIGENCE', done: conflicts.length > 0 },
-    { key: 'engine',    label: 'RENDERING ENGINE',      done: globeReady },
+    // In 2D-fallback mode the WebGL engine never signals ready, so treat the
+    // stage as satisfied once we've committed to the fallback (gated by geo data).
+    { key: 'engine',    label: useFallback ? '2D MAP ENGINE' : 'RENDERING ENGINE',
+      done: globeReady || (useFallback && geoData.length > 0) },
   ]
   const loadDone = loadStages.filter(s => s.done).length
   const allLoaded = loadDone === 4
+
+  // Last-resort fallback if even the 2D map fails to render — the full risk
+  // dataset is still available in the sidebar, so this just orients the user.
+  const finalFallback = (
+    <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6" style={{ background: '#070710' }}>
+      <div style={{ fontSize: 30, marginBottom: 12 }}>🌐</div>
+      <div className="font-mono text-sm text-slate-300 mb-2">Map view unavailable on this device</div>
+      <div className="font-mono text-xs text-slate-600" style={{ maxWidth: 320, lineHeight: 1.6 }}>
+        Live risk scores, alerts and conflict data are available in the panel
+        {isMobile ? ' — tap “Intel”.' : ' on the right.'}
+      </div>
+    </div>
+  )
 
   return (
     <div className="flex h-screen overflow-hidden relative" style={{ background: '#070710' }}>
@@ -565,6 +611,21 @@ export default function Globe() {
       {/* Globe area */}
       <div className="flex-1 relative overflow-hidden">
         <div style={{ opacity: allLoaded ? 1 : 0.01, transition: 'opacity 1.4s ease 0.4s', pointerEvents: allLoaded ? 'auto' : 'none' }}>
+        {useFallback ? (
+          <ErrorBoundary fallback={finalFallback}>
+            <GlobeFallback
+              geoData={geoData}
+              colorFor={mapFillColor}
+              conflicts={conflicts}
+              conflictColor={conflictColor}
+              onSelectFeature={handleClick}
+              viewMode={viewMode}
+              reason={globeCrashed ? 'crashed' : 'unsupported'}
+              onRetry={retry3D}
+            />
+          </ErrorBoundary>
+        ) : (
+        <ErrorBoundary onError={handleGlobeError}>
         <GlobeGL
           ref={globeRef}
           width={dims.w}
@@ -631,6 +692,8 @@ export default function Globe() {
           }}
           ringAltitude={0.01}
         />
+        </ErrorBoundary>
+        )}
         </div>
 
         {/* ── Cinematic loading overlay ────────────────────────────────── */}
