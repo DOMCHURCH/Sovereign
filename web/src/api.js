@@ -99,6 +99,7 @@ export const api = {
   conflictsSource: ()  => get('/conflicts/source'),
   graph:           ()  => get('/graph'),
   ingestStatus:    ()  => get('/ingest/status'),
+  dataFreshness:   ()  => get('/data-freshness'),
   runIngest:       ()  => post('/ingest/run', {}),
 }
 

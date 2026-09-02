@@ -16,22 +16,43 @@ function DataFreshness() {
   const [status, setStatus] = useState(null)
 
   useEffect(() => {
-    const load = () => api.ingestStatus().then(setStatus).catch(() => {})
+    const load = () => api.dataFreshness().then(setStatus).catch(() => {})
     load()
     const t = setInterval(load, 60000)
     return () => clearInterval(t)
   }, [])
 
   if (!status) return null
-  const lastRan = status.last_ran ? new Date(status.last_ran) : null
-  const diffMin = lastRan ? Math.floor((Date.now() - lastRan.getTime()) / 60000) : null
-  const label = diffMin === null ? 'LIVE' : diffMin < 2 ? 'LIVE' : diffMin < 60 ? `${diffMin}m ago` : `${Math.floor(diffMin/60)}h ago`
-  const isLive = diffMin === null || diffMin < 5
+  // Report the age of the risk snapshot actually being served. Previously this keyed off
+  // ingest_log, which is empty on serverless, so stale data showed a green "LIVE".
+  const diffMin = status.age_minutes == null ? null : Math.floor(status.age_minutes)
+  const label =
+    diffMin === null           ? 'NO DATA'
+    : diffMin < 5              ? 'LIVE'
+    : diffMin < 60             ? `${diffMin}m ago`
+    : diffMin < 60 * 48        ? `${Math.floor(diffMin / 60)}h ago`
+    :                            `${Math.floor(diffMin / 1440)}d ago`
+  const isLive = diffMin !== null && diffMin < 5
   return (
     <div className="flex items-center gap-1.5 px-2 py-1 rounded-md"
          style={{ background: isLive ? 'rgba(74,222,128,0.08)' : 'rgba(251,191,36,0.08)', border: `1px solid ${isLive ? 'rgba(74,222,128,0.15)' : 'rgba(251,191,36,0.15)'}` }}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: isLive ? '#4ade80' : '#fbbf24', boxShadow: `0 0 6px ${isLive ? 'rgba(74,222,128,0.8)' : 'rgba(251,191,36,0.8)'}` }} />
       <span className="text-xs font-mono" style={{ color: isLive ? '#4ade80' : '#fbbf24' }}>{label}</span>
+    </div>
+  )
+}
+
+// vercel.json rewrites every unknown path to index.html, so without this any typo
+// rendered a silent blank page under the nav instead of a 404.
+function NotFound() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-4" style={{ minHeight: 'calc(100vh - 48px)', background: '#070710' }}>
+      <div className="font-mono text-sm tracking-widest uppercase" style={{ color: '#a78bfa' }}>404 — no such view</div>
+      <div className="text-slate-500 text-sm">That page does not exist in Sovereign.</div>
+      <NavLink to="/" className="font-mono text-xs px-3 py-1.5 rounded-lg"
+               style={{ color: '#c4b5fd', border: '1px solid rgba(167,139,250,0.3)' }}>
+        ← Back to the globe
+      </NavLink>
     </div>
   )
 }
@@ -181,7 +202,7 @@ const TOUR_STEPS = [
   },
   {
     title: 'Live Risk Globe',
-    body: 'Every country is scored 0–100 across political instability, macro stress, sanctions exposure, and market volatility — updated every 15 minutes. Click any country for a full breakdown.',
+    body: 'Every country is scored 0–100 across political instability, macro stress, sanctions exposure, and market volatility — recomputed from source data on each refresh cycle. Click any country for a full breakdown.',
     icon: '🗺️',
     highlight: 'Globe',
   },
@@ -775,6 +796,7 @@ export default function App({ onReady }) {
             <Route path="/scenario" element={<Scenario />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
       </div>

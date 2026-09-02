@@ -14,8 +14,17 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/auth", tags=["auth"])
 _bearer = HTTPBearer(auto_error=False)
 
-JWT_SECRET = os.getenv("JWT_SECRET", "sovereign-dev-secret-change-in-prod")
+JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
+if not JWT_SECRET:
+    # Never fall back to a literal committed in the repo: with a known secret anyone can
+    # forge a valid token for any account. Fail loudly outside local development instead.
+    if os.getenv("VERCEL") or os.getenv("RENDER") or os.getenv("ENV") == "production":
+        raise RuntimeError("JWT_SECRET must be set when auth is enabled")
+    JWT_SECRET = "sovereign-local-dev-only-not-for-deployment"
 JWT_EXPIRY = 30  # days
+
+# Constant-time decoy so failed logins for unknown emails cost the same as known ones.
+_DUMMY_HASH = bcrypt.hashpw(b"sovereign-timing-equaliser", bcrypt.gensalt()).decode()
 
 TURSO_URL   = os.getenv("TURSO_DATABASE_URL", "")
 TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
@@ -154,7 +163,7 @@ def register(req: RegisterRequest):
     try:
         existing = _turso("SELECT id FROM users WHERE email = ?", [email])
         if existing:
-            raise HTTPException(409, "An account with that email already exists")
+            raise HTTPException(400, "Could not create an account with those details")
         pw_hash = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
         user_id = str(uuid.uuid4())
         _turso(
@@ -164,9 +173,10 @@ def register(req: RegisterRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, f"Registration failed: {e}")
+        print(f"[auth] register failed: {e}", flush=True)
+        raise HTTPException(500, "Registration failed")
     token = _make_token(user_id, email)
-    return {"token": token, "email": email, "first_name": req.first_name.strip(), "last_name": req.last_name.strip(), "groq_api_key": None}
+    return {"token": token, "email": email, "first_name": req.first_name.strip(), "last_name": req.last_name.strip(), "has_groq_api_key": False}
 
 
 @router.post("/login")
@@ -175,12 +185,18 @@ def login(req: LoginRequest):
     try:
         rows = _turso("SELECT id, email, password_hash, groq_api_key FROM users WHERE email = ?", [email])
     except Exception as e:
-        raise HTTPException(500, f"Login failed: {e}")
-    if not rows or not bcrypt.checkpw(req.password.encode(), rows[0]["password_hash"].encode()):
+        print(f"[auth] login failed: {e}", flush=True)
+        raise HTTPException(500, "Login failed")
+    # Always run a bcrypt comparison so response time does not reveal whether the
+    # account exists. _DUMMY_HASH is a bcrypt hash of a value nobody can supply.
+    stored = rows[0]["password_hash"] if rows else _DUMMY_HASH
+    ok = bcrypt.checkpw(req.password.encode(), stored.encode())
+    if not rows or not ok:
         raise HTTPException(401, "Invalid email or password")
     row = rows[0]
     token = _make_token(row["id"], row["email"])
-    return {"token": token, "email": row["email"], "groq_api_key": row.get("groq_api_key")}
+    # Do not echo the stored provider key back over the wire; the server uses it directly.
+    return {"token": token, "email": row["email"], "has_groq_api_key": bool(row.get("groq_api_key"))}
 
 
 @router.get("/me")
@@ -188,10 +204,11 @@ def me(user: dict = Depends(require_user)):
     try:
         rows = _turso("SELECT email, groq_api_key FROM users WHERE id = ?", [user["id"]])
     except Exception as e:
-        raise HTTPException(500, f"Lookup failed: {e}")
+        print(f"[auth] lookup failed: {e}", flush=True)
+        raise HTTPException(500, "Lookup failed")
     if not rows:
         raise HTTPException(404, "User not found")
-    return {"email": rows[0]["email"], "groq_api_key": rows[0].get("groq_api_key")}
+    return {"email": rows[0]["email"], "has_groq_api_key": bool(rows[0].get("groq_api_key"))}
 
 
 @router.post("/update-key")
@@ -200,7 +217,8 @@ def update_key(req: UpdateKeyRequest, user: dict = Depends(require_user)):
     try:
         _turso("UPDATE users SET groq_api_key = ? WHERE id = ?", [val, user["id"]])
     except Exception as e:
-        raise HTTPException(500, f"Update failed: {e}")
+        print(f"[auth] key update failed: {e}", flush=True)
+        raise HTTPException(500, "Update failed")
     return {"ok": True}
 
 

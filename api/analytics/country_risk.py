@@ -130,8 +130,10 @@ def run() -> dict[str, float]:
 
     # Get the earliest score for each country from the past 7-10 day window
     # so delta reflects the change since ~1 week ago, not the most recent run
-    week_ago = (now - timedelta(days=7)).isoformat()
-    ten_days_ago = (now - timedelta(days=10)).isoformat()
+    # Bind datetimes, not ISO strings: DuckDB will not compare TIMESTAMP to VARCHAR and
+    # raises BinderException, which previously aborted the entire scoring run.
+    week_ago = now - timedelta(days=7)
+    ten_days_ago = now - timedelta(days=10)
     old_scores_rows = conn.execute(
         """
         SELECT country_iso3, score FROM sovereign_risk

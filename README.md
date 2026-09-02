@@ -1,6 +1,6 @@
 # Sovereign — Geopolitical Risk Intelligence Platform
 
-**Live demo: [sovereign.onrender.com](https://sovereign.onrender.com)** · [Frontend](https://sovereign-web.vercel.app)
+**Live demo: [sovereign-rust-two.vercel.app](https://sovereign-rust-two.vercel.app)**
 
 ![Sovereign Globe View](docs/globe-screenshot.png)
 
@@ -8,7 +8,25 @@ Sovereign ingests fragmented public data across 50+ countries — sanctions list
 
 The platform operationalizes three distinct intelligence workflows: macro sovereign risk scoring (composite weighted factor model), network-based shock propagation (PageRank-style contagion with financial, trade, and regional channels), and portfolio stress testing (position-level P&L attribution against risk deltas). Every data point flows through strongly typed dataclasses before hitting the analytics layer — the same pattern Palantir's Foundry uses for its object graph.
 
-The technical approach prioritizes zero-infrastructure deployment. DuckDB replaces a Postgres cluster: all analytical queries run in-process against a single embedded file, with no connection pooling, no migration tooling, and no operational overhead. The contagion model builds a directed `networkx` graph from 30-day rolling ETF correlations and WBI trade openness scores, then propagates shocks with geometric attenuation (factor 0.6 per hop, max 2 hops). The LLM analyst streams responses via Server-Sent Events using Anthropic's `claude-3-5-haiku-20241022`, with a system prompt injected with live risk scores, alert counts, and portfolio exposure at request time.
+The technical approach prioritizes zero-infrastructure deployment. DuckDB replaces a Postgres cluster: all analytical queries run in-process against a single embedded file, with no connection pooling, no migration tooling, and no operational overhead. The contagion model builds a directed `networkx` graph from 30-day rolling ETF correlations and WBI trade openness scores, then propagates shocks with geometric attenuation (factor 0.6 per hop, max 2 hops). The LLM analyst streams responses via Server-Sent Events using Groq's `llama-3.1-8b-instant`, with a system prompt injected with current risk scores, alert counts, and portfolio exposure at request time.
+
+---
+
+## Deployment
+
+The whole platform runs on Vercel: the React build is served as static assets, and the
+FastAPI app is bundled into a single Python serverless function that `vercel.json`
+rewrites `/api/:path*` onto. There is no Render service — an earlier deployment there was
+removed, and `api/render.yaml` is kept only for anyone who wants to run the stateful
+variant with a real disk.
+
+**On data freshness.** A Vercel function's filesystem is ephemeral: `api/db.py` copies the
+committed `sovereign_seed.duckdb` into `/tmp` per container, so nothing written at request
+time survives. The snapshot is therefore refreshed *out of band* — the
+`.github/workflows/refresh-data.yml` job runs the full ingest and analytics pipeline on a
+schedule, commits the rebuilt `sovereign_seed.duckdb`, and the push triggers a redeploy.
+The nav badge reports the real age of the snapshot being served rather than claiming
+"LIVE" unconditionally.
 
 ---
 
@@ -16,7 +34,7 @@ The technical approach prioritizes zero-infrastructure deployment. DuckDB replac
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Ingest Layer (APScheduler, 6h cadence)                     │
+│  Ingest Layer (GitHub Actions, daily)                       │
 │  World Bank API · OFAC SDN CSV · yfinance ETFs · NewsAPI    │
 └────────────────────────┬────────────────────────────────────┘
                          │ writes
@@ -54,12 +72,12 @@ The technical approach prioritizes zero-infrastructure deployment. DuckDB replac
 |---|---|
 | Backend | Python 3.11 + FastAPI |
 | Data warehouse | DuckDB (embedded, zero infra) |
-| Scheduler | APScheduler |
+| Refresh | GitHub Actions (scheduled seed rebuild) |
 | Analytics | pandas · numpy · networkx · scikit-learn |
-| LLM | Anthropic `claude-3-5-haiku-20241022` |
+| LLM | Groq `llama-3.1-8b-instant` (OpenAI-compatible API) |
 | Frontend | React 18 + Vite + Tailwind + Recharts |
 | Map | react-simple-maps |
-| Deploy | Render (backend) + Vercel (frontend) |
+| Deploy | Vercel (frontend + FastAPI serverless function) |
 
 ---
 
@@ -71,7 +89,7 @@ The technical approach prioritizes zero-infrastructure deployment. DuckDB replac
 
 **How the risk score weights were chosen.** Political instability carries 25% because governance collapse is the single variable most correlated with outright sovereign default and capital flight — it subsumes the mechanism through which macro deterioration becomes crisis. Macro stress and market stress are weighted equally at 20% each: market signals are faster but noisier; WBI macro fundamentals are slower but more predictive of medium-term outcomes. Sanctions exposure at 15% reflects that primary-target designation is near-deterministic for investment exclusion, while governance deficit and sentiment each carry 10% as confirming rather than leading signals.
 
-**Why streaming SSE for the LLM analyst.** The median useful response from a sovereign risk query runs 200-400 tokens. At haiku inference speeds, that's 3-6 seconds to first token and 8-15 seconds to completion if delivered as a single JSON response. SSE cuts perceived latency to under a second: the client starts rendering tokens immediately. The implementation is a FastAPI `StreamingResponse` wrapping an `async for` loop over Anthropic's async stream — no WebSocket handshake, no custom protocol, and it degrades gracefully to HTTP/1.1.
+**Why streaming SSE for the LLM analyst.** The median useful response from a sovereign risk query runs 200-400 tokens. At small-model inference speeds, that's 3-6 seconds to first token and 8-15 seconds to completion if delivered as a single JSON response. SSE cuts perceived latency to under a second: the client starts rendering tokens immediately. The implementation is a FastAPI `StreamingResponse` wrapping an `async for` loop over the provider's async stream — no WebSocket handshake, no custom protocol, and it degrades gracefully to HTTP/1.1.
 
 ---
 
@@ -95,7 +113,7 @@ pip install -r requirements.txt
 python -m textblob.download_corpora
 
 cp .env.example .env
-# Add ANTHROPIC_API_KEY and NEWS_API_KEY to .env
+# Add GROQ_API_KEY and NEWS_API_KEY to .env
 
 python seed.py          # bootstrap with realistic data (optional; real ingest runs on startup)
 uvicorn main:app --reload --port 8000

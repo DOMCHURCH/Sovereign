@@ -1,5 +1,6 @@
 import os
 import json
+import hmac
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -21,24 +22,49 @@ from fastapi import Depends
 
 app = FastAPI(title="Sovereign API", version="1.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
+# The API is same-origin with the frontend on Vercel, so a wildcard is unnecessary.
+# `allow_origins=["*"]` together with `allow_credentials=True` is also invalid per the
+# CORS spec — browsers reject the pair. Allow explicit origins, plus any *.vercel.app
+# preview deployment, and drop credentials (auth is Bearer-token, not cookie-based).
+_ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://sovereign-rust-two.vercel.app,"
+        "https://sovereign-domchurchs-projects.vercel.app,"
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://sovereign-[a-z0-9-]+-domchurchs-projects\.vercel\.app",
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
 
-app.include_router(auth_router, prefix="/api")
+# The account UI was removed from this build, so nothing calls /api/auth/*. Leaving the
+# router mounted exposed unauthenticated, unthrottled writes to the live Turso database.
+# Set ENABLE_AUTH=1 to re-enable it alongside a restored sign-in frontend.
+if os.getenv("ENABLE_AUTH", "").strip() == "1":
+    app.include_router(auth_router, prefix="/api")
 
 # Auto-trigger ingest on startup if data is stale (>6 hours old)
 @app.on_event("startup")
 async def _startup():
+    if os.getenv("ENABLE_AUTH", "").strip() != "1":
+        return
     from auth import _turso_setup
     _turso_setup()
 
 @app.on_event("startup")
 async def _startup_ingest():
+    # On Vercel the DuckDB file lives in a per-container /tmp copy that is thrown away
+    # when the lambda freezes, so a cold-start ingest costs upstream rate limit for
+    # nothing. Only run it where the database actually persists (Render/local disk).
+    if os.getenv("VERCEL") or not os.getenv("DATABASE_PATH", "").strip():
+        return
     import asyncio
     async def _delayed():
         await asyncio.sleep(5)  # let server finish starting first
@@ -1239,6 +1265,25 @@ def get_graph():
     return {"nodes": nodes, "edges": edges}
 
 
+@router.get("/data-freshness")
+def data_freshness():
+    """When the risk snapshot currently being served was actually computed.
+
+    The nav badge used to key off ingest_log, which is empty on serverless because the
+    DuckDB copy is per-container and discarded — so a 110-day-old snapshot rendered as
+    a green "LIVE". Report the real computed_at of the data instead.
+    """
+    conn = get_conn()
+    row = conn.execute("SELECT MAX(computed_at) FROM sovereign_risk").fetchone()
+    ts = row[0] if row and row[0] else None
+    if ts is None:
+        return {"computed_at": None, "age_minutes": None}
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - ts).total_seconds() / 60.0
+    return {"computed_at": ts.isoformat(), "age_minutes": round(age, 1)}
+
+
 @router.get("/ingest/status")
 def ingest_status():
     conn = get_conn()
@@ -1247,7 +1292,16 @@ def ingest_status():
 
 
 @router.post("/ingest/run")
-def run_ingest(background_tasks: BackgroundTasks):
+def run_ingest(background_tasks: BackgroundTasks, request: Request):
+    # This kicks off World Bank + OFAC + yfinance + NewsAPI + Brave fetches. Left open it
+    # is a free cost/rate-limit lever for anyone who finds the URL. Requires INGEST_TOKEN.
+    expected = os.getenv("INGEST_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(503, "Manual ingest is disabled (INGEST_TOKEN not configured)")
+    supplied = (request.headers.get("X-Ingest-Token") or "").strip()
+    if not hmac.compare_digest(supplied, expected):
+        raise HTTPException(401, "Invalid or missing X-Ingest-Token")
+
     def _run():
         from ingest import world_bank, sanctions, markets, news
         from analytics import country_risk, contagion, portfolio_impact, alerts, gti

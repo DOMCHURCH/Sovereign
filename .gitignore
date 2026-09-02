@@ -11,3 +11,5 @@ api/dist/
 .vite/
 *.local
 .DS_Store
+.vercel
+.env.audit

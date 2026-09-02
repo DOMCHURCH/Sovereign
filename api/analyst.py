@@ -7,7 +7,7 @@ from db import get_conn
 # Provider routing — priority: GROQ_API_KEY > CEREBRAS_API_KEY (legacy, retiring May 2026)
 # User-provided BYOK key always routes to Groq
 GROQ_BASE_URL      = "https://api.groq.com/openai/v1"
-GROQ_MODEL         = "llama-3.3-70b-versatile"
+GROQ_MODEL         = "llama-3.1-8b-instant"
 CEREBRAS_BASE_URL  = "https://api.cerebras.ai/v1"
 CEREBRAS_MODEL     = "llama3.1-8b"
 
@@ -25,7 +25,8 @@ Portfolio estimated P&L exposure: {portfolio_impact_pct}
 Geopolitical Tension Index leaders: {gti_leaders}
 {country_context}
 {search_context}
-Data: World Bank WGI, OFAC SDN, country ETFs via yfinance, RSS news sentiment (VADER), ACLED conflict events, GDELT. Scores update every 15 minutes."""
+Data: World Bank WGI, OFAC SDN, country ETFs via yfinance, RSS news sentiment (VADER), curated conflict set.
+The risk snapshot above was computed at {data_as_of}. Treat it as of that date — do not claim figures are real-time."""
 
 
 def _brave_search(query: str) -> str:
@@ -112,7 +113,14 @@ def _build_system_prompt(message: str, country_context: str | None = None) -> st
     search_ctx = _brave_search(f"geopolitical {message} 2025 2026")
     ctx = f"\nCountry context loaded: {country_context}" if country_context else ""
 
+    try:
+        as_of_row = conn.execute("SELECT MAX(computed_at) FROM sovereign_risk").fetchone()
+        data_as_of = as_of_row[0].strftime("%Y-%m-%d %H:%M UTC") if as_of_row and as_of_row[0] else "an unknown date"
+    except Exception:
+        data_as_of = "an unknown date"
+
     return SYSTEM_PROMPT_TEMPLATE.format(
+        data_as_of=data_as_of,
         top_10_json=json.dumps(top_10, indent=2),
         alert_count=alert_count,
         critical_count=critical_count,
@@ -149,7 +157,8 @@ async def stream_analyst(
         base_url = CEREBRAS_BASE_URL
         model    = CEREBRAS_MODEL
     else:
-        yield "data: No AI API key configured — set GROQ_API_KEY in environment variables, or provide your own key via the settings panel."
+        yield ("The AI analyst is not configured on this deployment. "
+               "Set GROQ_API_KEY on the server, or supply your own Groq key via the X-API-Key header.")
         return
 
     from openai import AsyncOpenAI
@@ -166,4 +175,7 @@ async def stream_analyst(
             if delta:
                 yield delta
     except Exception as e:
-        yield f"\n\n[AI unavailable: {str(e)[:120]}]"
+        # Log the real cause server-side; never surface a raw provider error to users.
+        print(f"[analyst] {model} via {base_url} failed: {e}", flush=True)
+        yield ("\n\nThe AI analyst is temporarily unavailable. "
+               "Risk scores, alerts and contagion data on this page are unaffected.")

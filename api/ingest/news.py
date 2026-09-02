@@ -171,7 +171,7 @@ def _gdelt_supplement(conn, now):
     HIGH_PRIORITY = ["RUS", "UKR", "IRN", "PRK", "CHN", "SDN", "MMR", "SYR", "YEM", "AFG"]
 
     # Find which countries already have recent sentiment
-    cutoff = (now - timedelta(hours=2)).isoformat()
+    cutoff = now - timedelta(hours=2)  # bind a datetime; fetched_at is TIMESTAMP
     covered = {
         r[0]
         for r in conn.execute(

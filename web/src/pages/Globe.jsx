@@ -934,7 +934,7 @@ export default function Globe() {
 
       {/* Right sidebar — fixed overlay on mobile, inline on desktop */}
       <div
-        className="flex flex-col overflow-hidden overflow-y-auto"
+        className="flex flex-col overflow-x-hidden overflow-y-auto"
         style={{
           width: isMobile ? '88vw' : '288px',
           maxWidth: isMobile ? '360px' : undefined,
@@ -959,7 +959,9 @@ export default function Globe() {
           </h2>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        {/* shrink-0 so the sibling panels below cannot crush this list and slice a row
+            in half; it scrolls on its own once it runs out of room. */}
+        <div className="shrink-0 overflow-y-auto" style={{ maxHeight: 340 }}>
           {top10.map((c, i) => {
             const score = c.sovereign_risk_score ?? 0
             const barColor = TIER_COLORS[c.risk_tier] || '#64748b'

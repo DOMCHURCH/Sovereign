@@ -17,7 +17,16 @@ an operator UI with a natural-language analyst.
 - **Universities** see: a shipped, deployed system handling real-world data at a scope
   most undergrads never reach.
 
-**The live demo must work.** Every recruiter will click the link.
+**The live demo must work.** Every recruiter will click the link:
+https://sovereign-rust-two.vercel.app
+
+**Deployment facts that are easy to get wrong:**
+- There is no Render service. `api/render.yaml` is retained for self-hosting only.
+- Vercel serverless has an ephemeral filesystem, so DuckDB writes never persist. The
+  snapshot is refreshed by `.github/workflows/refresh-data.yml`, which commits a rebuilt
+  `api/sovereign_seed.duckdb`.
+- `/api/auth/*` is unmounted unless `ENABLE_AUTH=1`; this build has no sign-in UI.
+- `POST /api/ingest/run` requires an `X-Ingest-Token` header matching `INGEST_TOKEN`.
 
 ---
 
@@ -27,9 +36,9 @@ an operator UI with a natural-language analyst.
 |---|---|
 | Backend | Python 3.11 + FastAPI |
 | Data warehouse | DuckDB (embedded, zero infra) |
-| Scheduler | APScheduler (background ingest jobs) |
+| Refresh | GitHub Actions job rebuilds and commits the DuckDB seed on a schedule |
 | Analytics | pandas, numpy, statsmodels, scipy, scikit-learn, networkx |
-| LLM | Anthropic `claude-3-5-haiku-20241022` via streaming SSE |
+| LLM | Groq `llama-3.1-8b-instant` via streaming SSE (OpenAI-compatible client) |
 | Frontend | React 18 + Vite + Tailwind CSS + Recharts |
 | Map | react-simple-maps (choropleth world map) |
-| Deploy | Render (backend free tier) + Vercel (frontend free tier) |
+| Deploy | Vercel only — static frontend + FastAPI as one serverless function |
