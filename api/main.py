@@ -1399,6 +1399,34 @@ def run_ingest(background_tasks: BackgroundTasks, request: Request):
     return {"status": "ingest started"}
 
 
+@router.get("/analyst/status")
+def analyst_status():
+    """Which provider and model the analyst will actually use, and whether it resolves.
+
+    Both times the analyst broke, the provider had retired the pinned model and the only
+    evidence was a 404 rendered into the page. This makes that visible without reading
+    container logs. Reports no secrets — only whether a key is present.
+    """
+    from analyst import GROQ_BASE_URL, CEREBRAS_BASE_URL, _discover_model
+    groq = os.getenv("GROQ_API_KEY", "").strip()
+    cere = os.getenv("CEREBRAS_API_KEY", "").strip()
+    if groq:
+        provider, base, key, pin = "groq", GROQ_BASE_URL, groq, os.getenv("GROQ_MODEL", "").strip()
+    elif cere:
+        provider, base, key, pin = "cerebras", CEREBRAS_BASE_URL, cere, os.getenv("CEREBRAS_MODEL", "").strip()
+    else:
+        return {"configured": False, "provider": None, "model": None,
+                "detail": "No GROQ_API_KEY or CEREBRAS_API_KEY set"}
+    model = _discover_model(base, key, pin)
+    return {
+        "configured": True,
+        "provider": provider,
+        "model": model,
+        "pinned": bool(pin),
+        "detail": "ok" if model else "provider model catalogue unreachable",
+    }
+
+
 _analyst_bearer = HTTPBearer(auto_error=False)
 
 @router.post("/analyst")

@@ -4,12 +4,70 @@ import requests
 from typing import AsyncGenerator
 from db import get_conn
 
-# Provider routing — priority: GROQ_API_KEY > CEREBRAS_API_KEY (legacy, retiring May 2026)
-# User-provided BYOK key always routes to Groq
+# Provider routing — priority: GROQ_API_KEY > CEREBRAS_API_KEY (legacy).
+# A user-supplied BYOK key always routes to Groq.
 GROQ_BASE_URL      = "https://api.groq.com/openai/v1"
-GROQ_MODEL         = "llama-3.1-8b-instant"
 CEREBRAS_BASE_URL  = "https://api.cerebras.ai/v1"
-CEREBRAS_MODEL     = "llama3.1-8b"
+
+# Model IDs are NOT hardcoded any more. This app has now been broken twice by pinning
+# one: Cerebras retired "llama3.1-8b" and Groq retired "llama-3.1-8b-instant", and each
+# time the only symptom was a 404 rendered into the UI. Providers expose an
+# OpenAI-compatible /models endpoint, so ask them what exists and pick from preference.
+#
+# Set GROQ_MODEL (or CEREBRAS_MODEL) to pin a specific ID and skip discovery entirely.
+_MODEL_PREFERENCE = [
+    # Ordered by suitability for this workload: a ~25k-token system prompt and a short,
+    # factual answer. Cheap and fast beats large and slow here. Matched as substrings
+    # against whatever the provider actually lists.
+    "llama-3.3-70b", "llama-3.1-70b", "llama3.3-70b",
+    "llama-3.1-8b", "llama-3.2-90b", "llama3.1-8b",
+    "gpt-oss-120b", "gpt-oss-20b",
+    "qwen", "gemma2-9b", "mixtral",
+]
+
+# Cache discovery per (base_url, key) so it costs one request per process, not per turn.
+_model_cache: dict[str, str] = {}
+
+
+def _discover_model(base_url: str, api_key: str, pinned: str = "") -> str | None:
+    """Ask the provider which models it serves and pick the best available one.
+
+    Returns None if the catalogue cannot be read, in which case the caller should let
+    the request fail loudly rather than guess at an ID.
+    """
+    if pinned:
+        return pinned
+    cache_key = f"{base_url}:{api_key[-8:]}"
+    if cache_key in _model_cache:
+        return _model_cache[cache_key]
+    try:
+        resp = requests.get(
+            f"{base_url}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        available = [m.get("id", "") for m in resp.json().get("data", []) if m.get("id")]
+    except Exception as e:
+        print(f"[analyst] could not list models at {base_url}: {e}", flush=True)
+        return None
+
+    # Skip non-chat endpoints the catalogue also advertises.
+    chat = [
+        m for m in available
+        if not any(x in m.lower() for x in ("whisper", "tts", "guard", "embed", "vision", "prompt-guard"))
+    ]
+    for want in _MODEL_PREFERENCE:
+        for m in chat:
+            if want in m.lower():
+                print(f"[analyst] selected model {m} at {base_url}", flush=True)
+                _model_cache[cache_key] = m
+                return m
+    if chat:
+        print(f"[analyst] no preferred model matched; falling back to {chat[0]}", flush=True)
+        _model_cache[cache_key] = chat[0]
+        return chat[0]
+    return None
 
 BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 
@@ -151,14 +209,19 @@ async def stream_analyst(
     if groq_key:
         api_key  = groq_key
         base_url = GROQ_BASE_URL
-        model    = GROQ_MODEL
+        model    = _discover_model(base_url, api_key, os.getenv("GROQ_MODEL", "").strip())
     elif cerebras_key:
         api_key  = cerebras_key
         base_url = CEREBRAS_BASE_URL
-        model    = CEREBRAS_MODEL
+        model    = _discover_model(base_url, api_key, os.getenv("CEREBRAS_MODEL", "").strip())
     else:
         yield ("The AI analyst is not configured on this deployment. "
                "Set GROQ_API_KEY on the server, or supply your own Groq key via the X-API-Key header.")
+        return
+
+    if not model:
+        yield ("The AI analyst could not reach its model provider. "
+               "Risk scores, alerts and contagion data on this page are unaffected.")
         return
 
     from openai import AsyncOpenAI
@@ -175,6 +238,10 @@ async def stream_analyst(
             if delta:
                 yield delta
     except Exception as e:
+        # A retired model ID should self-heal: drop the cached choice, re-discover, and
+        # let the next request pick a live model instead of needing a redeploy.
+        if "model_not_found" in str(e) or "does not exist" in str(e):
+            _model_cache.pop(f"{base_url}:{api_key[-8:]}", None)
         # Log the real cause server-side; never surface a raw provider error to users.
         print(f"[analyst] {model} via {base_url} failed: {e}", flush=True)
         yield ("\n\nThe AI analyst is temporarily unavailable. "
