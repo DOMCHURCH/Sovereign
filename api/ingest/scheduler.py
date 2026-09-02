@@ -17,7 +17,7 @@ def _run_news_and_gti():
 
 def _run_full():
     """Full refresh every 6 hours."""
-    from ingest import world_bank, sanctions, markets, news
+    from ingest import world_bank, sanctions, markets, news, gdelt
     from ingest import weather as weather_ingest
     from analytics import country_risk, contagion, portfolio_impact, alerts, gti
     world_bank.run()
@@ -25,6 +25,9 @@ def _run_full():
     markets.run()
     news.run()
     weather_ingest.run()
+    # After news.run(), so GDELT sees what RSS already covered and only fills the gaps.
+    # Rate-limited to one request per 5s, so this is 6-hourly work, never 15-minute.
+    gdelt.run()
     country_risk.run()
     contagion.run()
     portfolio_impact.run()

@@ -37,7 +37,8 @@ from db import get_conn  # noqa: E402  (must follow the env var above)
 # Ingest first, then analytics — the analytics stages read what ingest wrote.
 # acled exposes fetch_recent_events(), not run() — it is pulled in on demand by the
 # conflicts endpoint rather than being a snapshot stage.
-INGEST_STAGES = ["world_bank", "sanctions", "markets", "news", "weather", "rss"]
+# gdelt runs after rss so it only fills countries RSS did not reach.
+INGEST_STAGES = ["world_bank", "sanctions", "markets", "news", "weather", "rss", "gdelt"]
 ANALYTICS_STAGES = ["country_risk", "contagion", "portfolio_impact", "alerts", "gti"]
 
 
