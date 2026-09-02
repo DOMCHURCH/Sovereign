@@ -1,94 +1,105 @@
-"""GDELT DOC 2.0 — global news tone and volume per country.
+"""GDELT 2.0 Events — global news tone per country, from the bulk export.
 
 Why this exists alongside rss.py
 --------------------------------
-The RSS pipeline reads a fixed list of English-language feeds and geocodes each
-headline to a country. That works, but coverage is uneven: a handful of countries
-dominate the feeds and the rest fall back to a *fabricated* neutral 0.0 in
-country_risk's sentiment component. GDELT monitors world news in 65+ languages and
-exposes a keyless API, so it gives every tracked country a real reading instead of an
-assumed one.
+The RSS pipeline reads a fixed list of English-language feeds and geocodes each headline
+to a country. Coverage is uneven: a handful of countries dominate the feeds and the rest
+fall back to a *fabricated* neutral 0.0 in country_risk's sentiment component — an
+assumption presented as a measurement, inside a term carrying 10% of the composite score.
+GDELT monitors world news in 65+ languages, so it can give those countries a real reading.
 
-Stores GDELT's own average tone (roughly -10..+10 in practice), rescaled to the -1..1
-range the rest of the pipeline uses so it is directly comparable to the VADER path.
+Why the bulk export rather than the DOC API
+-------------------------------------------
+The obvious approach is `api/v2/doc/doc?mode=TimelineTone` once per country. That was
+tried and measured, and it does not work at this scale: GDELT enforces one request per
+5 seconds, and even inside that budget it drops most requests at the TCP layer. A live
+run from the deployment host resolved **5 of 58 countries** before tripping the abort
+guard, and took minutes to do it.
 
-GDELT enforces **one request every 5 seconds** and answers faster callers with a bare
-HTTP 429. It is also intermittently flaky even inside that budget — roughly a third of
-requests return no usable series on any given pass. Both facts shape the design:
+GDELT also publishes every event as a bulk CSV refreshed every 15 minutes. One ~88 KB
+download yields ~64 countries with an average tone attached. So this fetches a handful of
+recent files instead — a couple of seconds, no rate limit, and far better coverage.
 
-  - One request per country, spaced 6s, tone only. Runs on the 6-hourly cycle, never
-    the 15-minute one.
-  - **Gap-fill only.** Countries with a recent RSS reading are skipped entirely. The
-    RSS path geocodes specific headlines and is the more precise signal where it
-    exists; GDELT's job is to replace the fabricated neutral 0.0 everywhere else.
-    This also cuts the request count to the countries that actually need it.
-  - One retry per country, because a single miss is usually transient.
-
-Source: https://api.gdeltproject.org/api/v2/doc/doc — no key required.
+Source: http://data.gdeltproject.org/gdeltv2/ — no key required.
 Terms: https://www.gdeltproject.org/about.html (attribution requested; see DATA_SOURCES.md)
 
-Idea borrowed from bilawalsidhu/gods-eye-view (MIT), which uses the same endpoint as a
-fail-soft fallback for locality-matched headlines.
+Idea borrowed from bilawalsidhu/gods-eye-view (MIT), which uses GDELT as a fail-soft
+fallback for locality-matched headlines.
 """
-import sys
+import io
 import os
-import time
-from datetime import timedelta
+import sys
+import zipfile
+from datetime import datetime, timedelta, timezone
 
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-GDELT_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
-TIMESPAN = "7d"
+GDELT_BASE = "http://data.gdeltproject.org/gdeltv2"
 
-# GDELT tone is roughly -10..+10 in practice; anything beyond that is noise. Divide by
-# this to land on the -1..1 scale the VADER path already produces.
+# Files land every 15 minutes. Eight of them is two hours of world coverage, which reaches
+# well past the handful of countries appearing in any single window.
+FILES_TO_FETCH = 8
+
+# Column positions in the GDELT 2.0 Events export (61 tab-separated fields, no header).
+COL_ACTOR1_COUNTRY = 7   # CAMEO country code, ISO3-shaped for real countries
+COL_ACTOR2_COUNTRY = 17
+COL_AVG_TONE = 34        # mean tone of documents mentioning the event
+
+# GDELT tone is nominally -100..+100 but sits within roughly -10..+10 in practice.
+# Divide by this to reach the -1..1 range the VADER path already produces.
 TONE_SCALE = 10.0
 
-# GDELT's documented limit is one request per 5 seconds; exceeding it returns a plain
-# 429 with that text. 6s leaves headroom for clock drift and keeps us clearly inside it.
-REQUEST_PAUSE_S = 6.0
-REQUEST_TIMEOUT_S = 30
-# Give up on the whole pass after this many consecutive failures — if GDELT is down or
-# has started refusing us, another 60 requests will not help.
-MAX_CONSECUTIVE_FAILURES = 6
+# Ignore thin evidence: a country seen once in two hours is noise, not sentiment.
+MIN_EVENTS_PER_COUNTRY = 3
+
+REQUEST_TIMEOUT_S = 60
 
 
-def _query(mode: str, query: str) -> dict | None:
+def _recent_file_urls(count: int) -> list[str]:
+    """URLs for the last `count` 15-minute export files, newest first.
+
+    Derived from the clock rather than lastupdate.txt, which names only the newest one.
+    A file that has not published yet simply 404s and is skipped.
+    """
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    now = now - timedelta(minutes=now.minute % 15)
+    return [
+        f"{GDELT_BASE}/{(now - timedelta(minutes=15 * i)).strftime('%Y%m%d%H%M%S')}.export.CSV.zip"
+        for i in range(count)
+    ]
+
+
+def _tone_by_country(url: str) -> dict[str, list[float]]:
+    """Download one export file and collect per-country tone values."""
+    out: dict[str, list[float]] = {}
     try:
-        resp = requests.get(
-            GDELT_URL,
-            params={"query": query, "mode": mode, "timespan": TIMESPAN, "format": "json"},
-            headers={"User-Agent": "Sovereign/1.0 (geopolitical risk research)"},
-            timeout=REQUEST_TIMEOUT_S,
-        )
-        if resp.status_code == 429:
-            # Back off hard rather than hammering a free service we are a guest on.
-            time.sleep(REQUEST_PAUSE_S * 2)
-            return None
+        resp = requests.get(url, timeout=REQUEST_TIMEOUT_S)
         if not resp.ok:
-            return None
-        # GDELT answers a bad query with HTML or a bare error string, not JSON.
-        if "application/json" not in resp.headers.get("Content-Type", ""):
-            return None
-        return resp.json()
+            return out
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
+            names = z.namelist()
+            if not names:
+                return out
+            text = z.read(names[0]).decode("utf-8", "replace")
     except Exception:
-        return None
+        return out
 
-
-def _mean_series(payload: dict | None) -> float | None:
-    """Average the first timeline series GDELT returns, ignoring empty windows."""
-    if not payload:
-        return None
-    timeline = payload.get("timeline") or []
-    if not timeline:
-        return None
-    points = timeline[0].get("data") or []
-    values = [p.get("value") for p in points if isinstance(p.get("value"), (int, float))]
-    if not values:
-        return None
-    return sum(values) / len(values)
+    for line in text.splitlines():
+        fields = line.split("\t")
+        if len(fields) <= COL_AVG_TONE:
+            continue
+        try:
+            tone = float(fields[COL_AVG_TONE])
+        except ValueError:
+            continue
+        # Credit both actors: an event about Russia acting on Ukraine is news for both.
+        for col in (COL_ACTOR1_COUNTRY, COL_ACTOR2_COUNTRY):
+            code = fields[col].strip().upper()
+            if code:
+                out.setdefault(code, []).append(tone)
+    return out
 
 
 def run() -> int:
@@ -97,13 +108,24 @@ def run() -> int:
 
     conn = get_conn()
     now = utcnow()
-    written = 0
-    failed = 0
-    consecutive = 0
 
-    # Countries that already have a reading from the last day come from RSS, which
-    # geocodes actual headlines. Leave those alone and spend the request budget on the
-    # ones that would otherwise be scored against an assumed-neutral sentiment.
+    collected: dict[str, list[float]] = {}
+    files_ok = 0
+    for url in _recent_file_urls(FILES_TO_FETCH):
+        chunk = _tone_by_country(url)
+        if chunk:
+            files_ok += 1
+            for code, tones in chunk.items():
+                collected.setdefault(code, []).extend(tones)
+
+    if not files_ok:
+        log_ingest("gdelt", "error", 0, "no GDELT export files could be read")
+        return 0
+
+    # Countries with a reading in the last day came from RSS, which geocodes actual
+    # headlines and is the more precise signal. Only fill the gaps. GDELT's country codes
+    # also include regional aggregates (AFR, EUR); intersecting with COUNTRY_METADATA
+    # drops those without needing a denylist.
     covered = {
         r[0] for r in conn.execute(
             "SELECT DISTINCT country_iso3 FROM news_sentiment WHERE fetched_at >= ?",
@@ -111,41 +133,15 @@ def run() -> int:
         ).fetchall()
     }
 
-    # Only countries the platform actually scores; the World Bank feed also returns
-    # aggregates like "WLD" and "EUU" that are meaningless to query for news.
-    targets = [
-        (iso3, meta[0] if isinstance(meta, (list, tuple)) else str(meta))
-        for iso3, meta in COUNTRY_METADATA.items()
-        if iso3 not in covered
-    ]
-    print(f"[gdelt] {len(covered)} countries already covered; querying {len(targets)}", flush=True)
-
-    for iso3, name in targets:
-        if not name:
+    written = 0
+    for iso3 in COUNTRY_METADATA:
+        if iso3 in covered:
             continue
-
-        # Quoted name keeps "South Sudan" from matching every article about Sudan.
-        tone = _mean_series(_query("TimelineTone", f'"{name}"'))
-        time.sleep(REQUEST_PAUSE_S)
-        if tone is None:
-            # GDELT drops requests intermittently even within its rate limit; one retry
-            # recovers most of them.
-            tone = _mean_series(_query("TimelineTone", f'"{name}"'))
-            time.sleep(REQUEST_PAUSE_S)
-
-        if tone is None:
-            failed += 1
-            consecutive += 1
-            if consecutive >= MAX_CONSECUTIVE_FAILURES:
-                log_ingest("gdelt", "error", written,
-                           f"aborted after {consecutive} consecutive failures")
-                return written
+        tones = collected.get(iso3, [])
+        if len(tones) < MIN_EVENTS_PER_COUNTRY:
             continue
-        consecutive = 0
-
-        # Clamp before scaling so an outlier window cannot swamp the composite score.
-        score = max(-1.0, min(1.0, tone / TONE_SCALE))
-
+        mean = sum(tones) / len(tones)
+        score = max(-1.0, min(1.0, mean / TONE_SCALE))
         conn.execute(
             """
             INSERT INTO news_sentiment (country_iso3, sentiment_score, article_count, fetched_at)
@@ -154,16 +150,18 @@ def run() -> int:
                 sentiment_score = excluded.sentiment_score,
                 article_count   = excluded.article_count
             """,
-            [iso3, score, 0, now],
+            [iso3, score, len(tones), now],
         )
         written += 1
 
-    status = "ok" if written else "error"
-    log_ingest("gdelt", status, written,
-               None if written else f"no countries resolved ({failed} failures)")
+    print(
+        f"[gdelt] {files_ok}/{FILES_TO_FETCH} files, {len(collected)} codes seen, "
+        f"{len(covered)} already covered, {written} gaps filled",
+        flush=True,
+    )
+    log_ingest("gdelt", "ok", written)
     return written
 
 
 if __name__ == "__main__":
-    n = run()
-    print(f"GDELT: tone written for {n} countries")
+    print(f"GDELT: filled {run()} countries")
