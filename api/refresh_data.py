@@ -8,16 +8,17 @@ writes is discarded when the container freezes. Running the ingest at request ti
 therefore burns upstream rate limit and persists nothing — which is how the deployed
 snapshot ended up frozen at its bootstrap date while the UI still advertised "LIVE".
 
-So the refresh happens out of band. `.github/workflows/refresh-data.yml` runs this on a
-schedule, and commits the updated `sovereign_seed.duckdb`. The push triggers a Vercel
-redeploy, and the new snapshot ships with it.
+On Railway this is no longer how the refresh happens — the service has a real volume and
+`ingest/scheduler.py` runs the cycles in-process. This script remains the way to rebuild
+the committed `sovereign_seed.duckdb`, which is what seeds a fresh volume on first boot
+(see db._runtime_db_path) and what a local checkout runs against.
 
 This *appends* to the existing file rather than rebuilding from empty, which matters:
 `sovereign_risk` is keyed on (country_iso3, computed_at), so successive runs accumulate
 the history that `delta_7d` and the 90-day country chart read from. A wipe-and-rebuild
 would permanently pin every delta at 0.00.
 
-Usage:  python api/refresh_data.py
+Usage:  python api/refresh_data.py   # then commit the updated seed
 """
 import os
 import pathlib

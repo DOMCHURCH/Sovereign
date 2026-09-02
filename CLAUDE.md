@@ -18,13 +18,17 @@ an operator UI with a natural-language analyst.
   most undergrads never reach.
 
 **The live demo must work.** Every recruiter will click the link:
-https://sovereign-rust-two.vercel.app
+https://sovereign-production-0351.up.railway.app
 
 **Deployment facts that are easy to get wrong:**
-- There is no Render service. `api/render.yaml` is retained for self-hosting only.
-- Vercel serverless has an ephemeral filesystem, so DuckDB writes never persist. The
-  snapshot is refreshed by `.github/workflows/refresh-data.yml`, which commits a rebuilt
-  `api/sovereign_seed.duckdb`.
+- Hosting is Railway, one service, built from the root `Dockerfile`. Not Render, not
+  Vercel — both are retired. `api/render.yaml` and `vercel.json` are kept for reference.
+- The volume at `/data` is what makes the scheduler work. Do not deploy this to a
+  serverless target again: DuckDB writes are discarded there and the data silently
+  freezes, which is exactly how this project spent four months.
+- `api/refresh_data.py` rebuilds the committed seed, which only seeds *fresh* volumes.
+  Changing it does not change live data — the scheduler owns that.
+- `PORT` is pinned to 8000 so the container and the generated domain agree.
 - `/api/auth/*` is unmounted unless `ENABLE_AUTH=1`; this build has no sign-in UI.
 - `POST /api/ingest/run` requires an `X-Ingest-Token` header matching `INGEST_TOKEN`.
 
@@ -36,9 +40,9 @@ https://sovereign-rust-two.vercel.app
 |---|---|
 | Backend | Python 3.11 + FastAPI |
 | Data warehouse | DuckDB (embedded, zero infra) |
-| Refresh | GitHub Actions job rebuilds and commits the DuckDB seed on a schedule |
+| Scheduler | APScheduler in-process — 15m news/GTI, 2h weather, 6h full refresh |
 | Analytics | pandas, numpy, statsmodels, scipy, scikit-learn, networkx |
 | LLM | Groq `llama-3.1-8b-instant` via streaming SSE (OpenAI-compatible client) |
 | Frontend | React 18 + Vite + Tailwind CSS + Recharts |
 | Map | react-simple-maps (choropleth world map) |
-| Deploy | Vercel only — static frontend + FastAPI as one serverless function |
+| Deploy | Railway — one Docker service, volume at /data, frontend served by FastAPI |

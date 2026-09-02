@@ -1,6 +1,6 @@
 # Sovereign — Geopolitical Risk Intelligence Platform
 
-**Live demo: [sovereign-rust-two.vercel.app](https://sovereign-rust-two.vercel.app)**
+**Live demo: [sovereign-production-0351.up.railway.app](https://sovereign-production-0351.up.railway.app)**
 
 ![Sovereign Globe View](docs/globe-screenshot.png)
 
@@ -14,19 +14,25 @@ The technical approach prioritizes zero-infrastructure deployment. DuckDB replac
 
 ## Deployment
 
-The whole platform runs on Vercel: the React build is served as static assets, and the
-FastAPI app is bundled into a single Python serverless function that `vercel.json`
-rewrites `/api/:path*` onto. There is no Render service — an earlier deployment there was
-removed, and `api/render.yaml` is kept only for anyone who wants to run the stateful
-variant with a real disk.
+One Railway service, built from the `Dockerfile`: stage one compiles the React bundle,
+stage two runs it and the API from a single `uvicorn` process. `/api/*` goes to FastAPI
+and everything else falls through to the SPA, so the app is same-origin — no CORS, no
+`VITE_API_URL`, one deploy.
 
-**On data freshness.** A Vercel function's filesystem is ephemeral: `api/db.py` copies the
-committed `sovereign_seed.duckdb` into `/tmp` per container, so nothing written at request
-time survives. The snapshot is therefore refreshed *out of band* — the
-`.github/workflows/refresh-data.yml` job runs the full ingest and analytics pipeline on a
-schedule, commits the rebuilt `sovereign_seed.duckdb`, and the push triggers a redeploy.
-The nav badge reports the real age of the snapshot being served rather than claiming
-"LIVE" unconditionally.
+A Railway volume is mounted at `/data` and `DATABASE_PATH` points DuckDB at it. On first
+boot against an empty volume, `db._runtime_db_path()` seeds it from the committed
+`sovereign_seed.duckdb` so the service comes up serving data rather than an empty schema.
+From then on `ingest/scheduler.py` runs in-process and the writes persist.
+
+**Why not serverless.** This was previously deployed to Vercel, where the filesystem is
+ephemeral: every write went to a per-container `/tmp` copy that was discarded when the
+function froze. That made `start_scheduler()` unusable, so it was never called, so the
+data never moved. A single worker is used deliberately — DuckDB is single-writer, and a
+second worker would contend for the lock on the volume.
+
+**Known limitation.** Because of that single-writer lock, a full 6-hourly refresh can make
+reads queue behind it for a stretch. Acceptable at this scale; the fix if it ever matters
+is to build into a second file and swap it in.
 
 ---
 
@@ -34,7 +40,7 @@ The nav badge reports the real age of the snapshot being served rather than clai
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Ingest Layer (GitHub Actions, daily)                       │
+│  Ingest Layer (APScheduler: 15m news/GTI, 6h full)          │
 │  World Bank API · OFAC SDN CSV · yfinance ETFs · NewsAPI    │
 └────────────────────────┬────────────────────────────────────┘
                          │ writes
@@ -72,12 +78,12 @@ The nav badge reports the real age of the snapshot being served rather than clai
 |---|---|
 | Backend | Python 3.11 + FastAPI |
 | Data warehouse | DuckDB (embedded, zero infra) |
-| Refresh | GitHub Actions (scheduled seed rebuild) |
+| Scheduler | APScheduler (in-process, 15m / 2h / 6h cycles) |
 | Analytics | pandas · numpy · networkx · scikit-learn |
 | LLM | Groq `llama-3.1-8b-instant` (OpenAI-compatible API) |
 | Frontend | React 18 + Vite + Tailwind + Recharts |
 | Map | react-simple-maps |
-| Deploy | Vercel (frontend + FastAPI serverless function) |
+| Deploy | Railway — one container, persistent volume |
 
 ---
 
