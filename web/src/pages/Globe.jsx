@@ -23,7 +23,7 @@ const TIER_COLORS = {
   elevated: '#fbbf24',  // amber
   high:     '#fb923c',  // orange
   severe:   '#f87171',  // red
-  none:     '#1e2d3d',  // dark blue-grey (ocean-ish, not pure black)
+  none:     '#c8d6e8',  // pale neutral — lifts unscored land, never reads as a void
 }
 
 const TIER_ALT = {
@@ -34,12 +34,16 @@ const TIER_ALT = {
   none:     0.001,
 }
 
+// Opacity of the risk overlay per tier. These are deliberately low: the globe now has
+// real terrain under it, and the point is to read risk *and* geography at once. Severity
+// is carried by hue and by altitude (TIER_ALT) as much as by opacity, so quiet tiers can
+// afford to be nearly transparent and let the Earth show through.
 const TIER_CAP_ALPHA = {
-  severe:   0.9,
-  high:     0.8,
-  elevated: 0.7,
-  low:      0.65,
-  none:     0.5,
+  severe:   0.72,
+  high:     0.58,
+  elevated: 0.42,
+  low:      0.26,
+  none:     0.30,
 }
 
 const CAPITALS = {
@@ -71,6 +75,21 @@ const CAPITALS = {
   HTI:{lat:18.5,lng:-72.3}, MLI:{lat:12.6,lng:-8.0},  NER:{lat:13.5,lng:2.1},
   SOM:{lat:2.0,lng:45.3},   MOZ:{lat:-25.9,lng:32.6}, BFA:{lat:12.4,lng:-1.5},
   ARM:{lat:40.2,lng:44.5},
+}
+
+/**
+ * Where the sun is directly overhead, for the given moment.
+ *
+ * Latitude is the solar declination (the seasonal tilt, ±23.44°); longitude walks
+ * westward 15° per hour from the anti-meridian at 00:00 UTC. Accurate to well under a
+ * degree, which is far finer than a terminator drawn across a 900px globe needs.
+ */
+function subsolarPoint(date) {
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0)
+  const dayOfYear = (Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - start) / 86400000
+  const declination = -23.44 * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10))
+  const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60
+  return { lat: declination, lng: 180 - utcHours * 15 }
 }
 
 function hexToRgba(hex, alpha) {
@@ -257,14 +276,40 @@ export default function Globe() {
   const useFallback = !webglOK || globeCrashed
   const globeRef = useRef(null)
 
-  // Dark-navy globe material — no CDN image dependency, renders on all devices.
-  // THREE is a transitive dep of react-globe.gl so it's already in the bundle.
-  const globeMaterial = useMemo(() => new THREE.MeshPhongMaterial({
-    color:    new THREE.Color(0x0b1a30),
-    emissive: new THREE.Color(0x040c18),
-    shininess: 12,
-    specular:  new THREE.Color(0x1a3a6a),
-  }), [])
+  // Textured Earth. Previously this was a flat navy sphere, which read as a diagram
+  // rather than a planet — the country polygons were the only thing giving it shape.
+  //
+  // Textures are NASA Blue Marble derivatives (public domain) served from our own origin,
+  // not a CDN, so the globe still works with no external network access. They are
+  // deliberately *dimmed* via `color`: a full-brightness daylight Earth would fight the
+  // risk choropleth drawn on top of it, and legibility of the data wins over prettiness.
+  const globeMaterial = useMemo(() => {
+    const loader = new THREE.TextureLoader()
+    const load = (path, srgb) => {
+      const t = loader.load(path)
+      // Colour textures need sRGB decoding; data textures (normal, specular) must not
+      // be decoded or the lighting maths comes out wrong.
+      if (srgb && 'colorSpace' in t) t.colorSpace = THREE.SRGBColorSpace
+      t.anisotropy = 4
+      return t
+    }
+    return new THREE.MeshPhongMaterial({
+      map:          load('/textures/earth_day.jpg', true),
+      normalMap:    load('/textures/earth_normal.jpg', false),
+      specularMap:  load('/textures/earth_specular.jpg', false),
+      // City lights on the unlit hemisphere. Emissive ignores lighting, so this shows
+      // through exactly where the sun does not reach — the effect that sells it as Earth.
+      emissiveMap:  load('/textures/earth_lights.jpg', true),
+      emissive:     new THREE.Color(0xffdda8),
+      emissiveIntensity: 0.7,
+      // Dim + cool the daylight side so risk colours stay readable on top.
+      color:        new THREE.Color(0xb9c6de),
+      // Oceans catch the sun, land does not — driven by the specular map.
+      specular:     new THREE.Color(0x334466),
+      shininess:    18,
+      normalScale:  new THREE.Vector2(0.7, 0.7),
+    })
+  }, [])
   const navigate = useNavigate()
 
   // Data fetching
@@ -325,6 +370,39 @@ export default function Globe() {
     controls.autoRotate = true
     controls.autoRotateSpeed = 0.4
     controls.enableZoom = true
+
+    // Light the globe from where the sun actually is right now, so the terminator falls
+    // across the real day/night line. globe.gl ships a flat ambient + a camera-locked
+    // directional light, which lights the sphere evenly and makes it read as a ball
+    // rather than a planet. Replacing them is what produces the lit crescent, the
+    // shadowed limb, and the city lights emerging on the dark side.
+    try {
+      const scene = globeRef.current.scene()
+      if (scene) {
+        scene.children
+          .filter(o => o.isDirectionalLight || o.isAmbientLight)
+          .forEach(o => scene.remove(o))
+
+        // Enough ambient to keep the night side readable, not enough to flatten it.
+        scene.add(new THREE.AmbientLight(0xbcd4ff, 0.55))
+
+        const sun = new THREE.DirectionalLight(0xfff4e0, 2.2)
+        const { lat, lng } = subsolarPoint(new Date())
+        // globe.gl's sphere has radius 100 and maps lng 0 to +Z.
+        const phi = (90 - lat) * Math.PI / 180
+        const theta = (lng + 180) * Math.PI / 180
+        const R = 800
+        sun.position.set(
+          -R * Math.sin(phi) * Math.cos(theta),
+           R * Math.cos(phi),
+           R * Math.sin(phi) * Math.sin(theta),
+        )
+        scene.add(sun)
+      }
+    } catch {
+      // Lighting is cosmetic — never let it stop the globe from rendering.
+    }
+
     setGlobeReady(true)
   }, [])
 
@@ -446,16 +524,16 @@ export default function Globe() {
 
     if (viewMode === 'conflict') {
       const color = getConflictViewColor(iso3, conflictsByCountry, c)
-      return hexToRgba(color, isHov ? 0.95 : 0.78)
+      return hexToRgba(color, isHov ? 0.9 : 0.55)
     }
     if (viewMode === 'contagion') {
       const color = getContagionViewColor(iso3, contagionScores)
-      return hexToRgba(color, isHov ? 0.95 : 0.82)
+      return hexToRgba(color, isHov ? 0.9 : 0.58)
     }
     // Risk view (default)
     const tier = c?.risk_tier || 'none'
     const color = TIER_COLORS[tier] || TIER_COLORS.none
-    return hexToRgba(color, isHov ? 0.95 : (TIER_CAP_ALPHA[tier] ?? 0.5))
+    return hexToRgba(color, isHov ? 0.9 : (TIER_CAP_ALPHA[tier] ?? 0.1))
   }, [byIso3, hovered, viewMode, conflictsByCountry, contagionScores])
 
   // Solid fill for the 2D fallback map — same view-mode logic as the 3D globe,
@@ -494,7 +572,7 @@ export default function Globe() {
     const iso3 = getIso3(feat)
     const c = iso3 ? byIso3[iso3] : null
     const tier = c?.risk_tier || 'none'
-    return hexToRgba(TIER_COLORS[tier] || TIER_COLORS.none, 0.3)
+    return hexToRgba(TIER_COLORS[tier] || TIER_COLORS.none, 0.22)
   }, [byIso3])
 
   const polygonAlt = useCallback((feat) => {
@@ -517,7 +595,7 @@ export default function Globe() {
   }, [byIso3, conflictsByCountry, gtiByIso3, alerts])
 
   // Stable stroke color — must not be inline arrow or it recreates every render
-  const polygonStroke = useCallback(() => 'rgba(148,163,184,0.15)', [])
+  const polygonStroke = useCallback(() => 'rgba(186,205,230,0.28)', [])
 
   const refreshConflicts = useCallback(() => {
     setConflictsLoading(true)
@@ -644,10 +722,10 @@ export default function Globe() {
           width={dims.w}
           height={dims.h}
           onGlobeReady={onGlobeReady}
-          backgroundColor="#070710"
+          backgroundColor="#03050c"
           globeMaterial={globeMaterial}
-          atmosphereColor="#6366f1"
-          atmosphereAltitude={0.22}
+          atmosphereColor="#5b9dff"
+          atmosphereAltitude={0.16}
           polygonsData={geoData}
           polygonCapColor={polygonColor}
           polygonSideColor={polygonSideColor}

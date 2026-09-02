@@ -38,11 +38,11 @@ https://sovereign-production-0351.up.railway.app
 
 | Layer | Tech |
 |---|---|
-| Backend | Python 3.11 + FastAPI |
-| Data warehouse | DuckDB (embedded, zero infra) |
+| Backend | Python 3.13 + FastAPI |
+| Data warehouse | DuckDB on the Railway volume at /data |
 | Scheduler | APScheduler in-process — 15m news/GTI, 2h weather, 6h full refresh |
 | Analytics | pandas, numpy, statsmodels, scipy, scikit-learn, networkx |
-| LLM | Groq `llama-3.1-8b-instant` via streaming SSE (OpenAI-compatible client) |
+| LLM | Groq, model **discovered** from /models at runtime — never pin an ID, two providers have retired ours |
 | Frontend | React 18 + Vite + Tailwind CSS + Recharts |
-| Map | react-simple-maps (choropleth world map) |
+| Globe | react-globe.gl / three, NASA Blue Marble textures in web/public/textures |
 | Deploy | Railway — one Docker service, volume at /data, frontend served by FastAPI |
