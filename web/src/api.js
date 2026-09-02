@@ -74,6 +74,7 @@ export const api = {
   portfolio:       ()      => cachedGet('/portfolio',        600),   // 10 min
   portfolioImpact: ()      => cachedGet('/portfolio/impact', 600),   // 10 min
   conflicts:       ()      => cachedGet('/conflicts',        1800),  // 30 min
+  events:          (d = 7) => cachedGet(`/events?days=${d}&limit=250`, 300),  // 5 min — this feed is the live one
   gti:             ()      => cachedGet('/gti',              900),   // 15 min
   marketSnapshot:  ()      => cachedGet('/market/snapshot',  300),   // 5 min
   dashboard:       ()      => cachedGet('/dashboard',        120),   // 2 min

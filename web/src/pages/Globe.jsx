@@ -262,6 +262,7 @@ export default function Globe() {
   const [conflicts, setConflicts] = useState([])
   const [conflictSource, setConflictSource] = useState('curated')
   const [conflictsLoading, setConflictsLoading] = useState(false)
+  const [events, setEvents] = useState([])
   const [gtiData, setGtiData] = useState([])
   const [marketData, setMarketData] = useState(null)
   const [weatherData, setWeatherData] = useState([])
@@ -318,6 +319,7 @@ export default function Globe() {
       .then(d => { setCountries(d && d.length > 0 ? d : FALLBACK_COUNTRIES); setLastRefresh(new Date()) })
       .catch(() => { setCountries(FALLBACK_COUNTRIES); setLastRefresh(new Date()) })
     api.alerts().then(setAlerts).catch(() => {})
+    api.events(7).then(d => setEvents(Array.isArray(d) ? d : [])).catch(() => {})
     api.portfolioImpact().then(setImpact).catch(() => {})
     setConflictsLoading(true)
     api.conflicts()
@@ -451,10 +453,21 @@ export default function Globe() {
   // In Conflict View, cluster nearby hotspots into merged markers
   const clusteredConflicts = useMemo(() => clusterConflicts(conflicts), [conflicts])
 
-  const activePointsData = useMemo(
-    () => viewMode === 'conflict' ? clusteredConflicts : conflicts,
-    [viewMode, clusteredConflicts, conflicts]
+  // Individual dated incidents, distinct from the curated long-running conflicts.
+  // Marked with kind:'event' so the shared point renderers can branch on it.
+  const eventPoints = useMemo(
+    () => events
+      .filter(e => e.lat != null && e.lng != null)
+      .map(e => ({ ...e, kind: 'event' })),
+    [events]
   )
+
+  const activePointsData = useMemo(() => {
+    const base = viewMode === 'conflict' ? clusteredConflicts : conflicts
+    // Events ride along in every view: they are the answer to "what happened today",
+    // which is the question the curated conflict list could never answer.
+    return [...base, ...eventPoints]
+  }, [viewMode, clusteredConflicts, conflicts, eventPoints])
 
   // Pulsing rings: severe/high countries + conflict zones + severe weather (cyan)
   const ringsData = useMemo(() => {
@@ -501,6 +514,12 @@ export default function Globe() {
 
   // Clicking a conflict spike navigates to the primary country involved
   const handlePointClick = useCallback((d) => {
+    // An incident's only further detail is the article it was reported in.
+    if (d?.kind === 'event') {
+      if (d.url) window.open(d.url, '_blank', 'noopener,noreferrer')
+      else if (d.iso3) navigate(`/country/${d.iso3}`)
+      return
+    }
     const iso3 = d.defender_iso3 || d.attacker_iso3 || d.countries?.[0]
     if (iso3) navigate(`/country/${iso3}`)
   }, [navigate])
@@ -605,11 +624,37 @@ export default function Globe() {
     api.conflictsSource().then(d => setConflictSource(d.source)).catch(() => {})
   }, [])
 
-  const conflictColor  = useCallback(d => CAT_COLORS[d.category] || '#ffd700', [])
-  const conflictAlt    = useCallback(d => CONFLICT_ALT[d.intensity]    || 0.03, [])
-  const conflictRadius = useCallback(d => CONFLICT_RADIUS[d.intensity] || 0.3, [])
+  const EVENT_COLORS = { major: '#ff2d55', significant: '#ff8a3d', minor: '#ffd166' }
+
+  const conflictColor  = useCallback(d => (
+    d.kind === 'event' ? (EVENT_COLORS[d.severity] || '#ffd166') : (CAT_COLORS[d.category] || '#ffd700')
+  ), [])
+  const conflictAlt    = useCallback(d => (
+    d.kind === 'event' ? 0.012 : (CONFLICT_ALT[d.intensity] || 0.03)
+  ), [])
+  const conflictRadius = useCallback(d => {
+    if (d.kind !== 'event') return CONFLICT_RADIUS[d.intensity] || 0.3
+    // Scale with how widely the incident was reported, clamped so one huge story does
+    // not swamp the globe and a single-source report is still visible.
+    const m = Math.max(1, d.mentions || 1)
+    return Math.min(0.34, 0.1 + Math.log10(m) * 0.11)
+  }, [])
 
   const conflictLabel = useCallback(d => {
+    if (d.kind === 'event') {
+      const c = { major: '#ff2d55', significant: '#ff8a3d', minor: '#ffd166' }[d.severity] || '#ffd166'
+      const where = [d.place, d.country].filter(Boolean).join(' · ')
+      const host = (() => { try { return new URL(d.url).hostname.replace(/^www\./, '') } catch { return '' } })()
+      return `<div style="background:rgba(7,5,16,0.98);border:1px solid ${c}66;border-radius:10px;padding:11px 14px;font-family:monospace;min-width:210px;max-width:290px;box-shadow:0 6px 32px rgba(0,0,0,0.8)">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+          <span style="font-size:9px;padding:2px 7px;border-radius:4px;background:${c}25;color:${c};border:1px solid ${c}55;text-transform:uppercase;font-weight:700;letter-spacing:0.06em">${d.severity}</span>
+          <span style="color:#64748b;font-size:10px">${d.date}</span>
+        </div>
+        <div style="color:#f8fafc;font-size:13px;font-weight:700;margin-bottom:4px">${d.category}</div>
+        <div style="color:#94a3b8;font-size:11px;line-height:1.45">${where || 'Location unspecified'}</div>
+        ${host ? `<div style="color:#64748b;font-size:10px;margin-top:7px;padding-top:6px;border-top:1px solid #1e1e2e">${host} · ${d.mentions} mentions</div>` : ''}
+      </div>`
+    }
     const color = CAT_COLORS[d.category] || '#ffd700'
     const catLabel = CAT_LABELS[d.category] || d.category || d.type
     const intensityIcon = d.intensity === 'major' ? '🔴' : d.intensity === 'significant' ? '🟠' : '🟡'
@@ -1171,7 +1216,42 @@ export default function Globe() {
             </button>
           </div>
 
-          {/* Conflict zones */}
+          {/* Live incident feed -- the answer to "what happened today", which the
+              curated conflict list below cannot give. Each row is one dated event at
+              real coordinates; clicking opens the article it was reported in. */}
+          {events.length > 0 && (
+            <div className="space-y-1.5 pb-3 mb-1" style={{ borderBottom: '1px solid #1e1e2e' }}>
+              <div className="flex items-center gap-2 text-xs font-mono">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#ff2d55', boxShadow: '0 0 6px #ff2d55' }} />
+                <span className="text-slate-400 font-semibold">Live Incidents</span>
+                <span className="text-slate-600">({events.length})</span>
+                <span className="ml-auto text-slate-700" style={{ fontSize: 9 }}>7 DAYS</span>
+              </div>
+              <div className="space-y-1 overflow-y-auto" style={{ maxHeight: 190 }}>
+                {events.slice(0, 40).map(e => {
+                  const c = { major: '#ff2d55', significant: '#ff8a3d', minor: '#ffd166' }[e.severity] || '#ffd166'
+                  return (
+                    <button
+                      key={e.id}
+                      onClick={() => e.url && window.open(e.url, '_blank', 'noopener,noreferrer')}
+                      className="w-full text-left flex items-start gap-2 px-1 py-1 rounded hover:bg-white/5 transition-colors"
+                      title={e.url || ''}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ background: c }} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-slate-300 truncate" style={{ fontSize: 11 }}>{e.category}</span>
+                        <span className="block text-slate-600 truncate font-mono" style={{ fontSize: 9 }}>
+                          {e.date} - {e.place || e.country || 'Unknown location'}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Curated conflict zones -- long-running wars, context rather than news */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-mono">

@@ -177,6 +177,24 @@ def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
     """)
 
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS events (
+            id              BIGINT PRIMARY KEY,     -- GDELT GlobalEventID
+            event_date      DATE NOT NULL,
+            cameo_code      VARCHAR NOT NULL,
+            category        VARCHAR NOT NULL,       -- human label for cameo_code
+            severity        VARCHAR NOT NULL,       -- major | significant | minor
+            country_iso3    VARCHAR,                -- null when the location is unmapped
+            place_name      VARCHAR,
+            lat             DOUBLE,
+            lng             DOUBLE,
+            mentions        INTEGER NOT NULL DEFAULT 0,
+            goldstein       DOUBLE,
+            source_url      VARCHAR,
+            fetched_at      TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """)
+
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS weather_data (
             country_iso3    VARCHAR PRIMARY KEY,
             temp_c          DOUBLE,

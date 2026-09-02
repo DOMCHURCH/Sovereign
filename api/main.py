@@ -493,6 +493,51 @@ _CONFLICTS = [
 ]
 
 
+@router.get("/events")
+def get_events(days: int = 7, iso3: str | None = None, severity: str | None = None,
+               limit: int = 200):
+    """Recent violent events from GDELT, with real dates, coordinates and sources.
+
+    This is the live counterpart to /conflicts, which is a curated list of long-running
+    wars. An entry here is a single dated incident at the place it actually happened.
+    """
+    conn = get_conn()
+    where = ["event_date >= ?"]
+    args: list = [(datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max(1, min(days, 90)))).date()]
+    if iso3:
+        where.append("country_iso3 = ?")
+        args.append(iso3.upper())
+    if severity:
+        where.append("severity = ?")
+        args.append(severity.lower())
+    args.append(max(1, min(limit, 1000)))
+
+    rows = conn.execute(
+        f"""SELECT id, event_date, category, severity, country_iso3, place_name,
+                   lat, lng, mentions, goldstein, source_url
+            FROM events WHERE {' AND '.join(where)}
+            ORDER BY event_date DESC, mentions DESC LIMIT ?""",
+        args,
+    ).fetchall()
+    return [
+        {
+            "id": r[0],
+            "date": r[1].isoformat() if hasattr(r[1], "isoformat") else str(r[1]),
+            "category": r[2],
+            "severity": r[3],
+            "iso3": r[4],
+            "country": COUNTRY_METADATA.get(r[4], (r[4], ""))[0] if r[4] else None,
+            "place": r[5],
+            "lat": r[6],
+            "lng": r[7],
+            "mentions": r[8],
+            "goldstein": r[9],
+            "url": r[10],
+        }
+        for r in rows
+    ]
+
+
 @router.get("/conflicts")
 def get_conflicts():
     return _fetch_live_conflicts()
@@ -1384,7 +1429,7 @@ def run_ingest(background_tasks: BackgroundTasks, request: Request):
         # Mirror the scheduler's 6-hourly stage list so a manual trigger and the
         # automatic cycle produce the same snapshot. weather/rss/gdelt were absent
         # here, making a manual run quietly narrower than the cycle it stands in for.
-        from ingest import world_bank, sanctions, markets, news, rss, gdelt
+        from ingest import world_bank, sanctions, markets, news, rss, gdelt, events
         from ingest import weather as weather_ingest
         from analytics import country_risk, contagion, portfolio_impact, alerts, gti
         world_bank.run()
@@ -1394,6 +1439,7 @@ def run_ingest(background_tasks: BackgroundTasks, request: Request):
         weather_ingest.run()
         rss.run()
         gdelt.run()
+        events.run()
         country_risk.run()
         contagion.run()
         portfolio_impact.run()

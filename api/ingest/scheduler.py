@@ -8,10 +8,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
 def _run_news_and_gti():
-    """Fast cycle: news + GTI every 15 minutes."""
-    from ingest import news
+    """Fast cycle: news + events + GTI every 15 minutes.
+
+    Events belong on the fast cycle, not the 6-hourly one: GDELT publishes a new export
+    every 15 minutes and the whole point of the feed is that it is current.
+    """
+    from ingest import news, events
     from analytics import gti
     news.run()
+    events.run()
     gti.run()
 
 
