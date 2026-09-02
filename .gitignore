@@ -13,4 +13,3 @@ api/dist/
 .DS_Store
 .vercel
 .env.audit
-.railway
