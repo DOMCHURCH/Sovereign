@@ -113,7 +113,11 @@ export default function Country() {
     .map(([k, label]) => ({ name: label, value: Math.round(sub[k]) }))
     .sort((a, b) => b.value - a.value)
 
-  const histData = history.map(h => ({
+  // The endpoint now returns { points, sufficient }; tolerate the old bare-array shape
+  // so a stale cached response cannot blank the page.
+  const histPoints = Array.isArray(history) ? history : (history?.points ?? [])
+  const histSufficient = Array.isArray(history) ? histPoints.length >= 4 : !!history?.sufficient
+  const histData = histPoints.map(h => ({
     date: h.date?.slice(0, 10),
     score: parseFloat(h.score?.toFixed(1)),
   }))
@@ -157,9 +161,15 @@ export default function Country() {
             <h1 className="text-2xl font-bold">{country.name}</h1>
             <span className="font-mono text-slate-500">{iso3}</span>
             <RiskBadge tier={country.risk_tier} />
-            {delta != null && (
+            {delta != null ? (
               <span className="text-sm font-mono" style={{ color: deltaColor }}>
                 {delta >= 0 ? '↑' : '↓'} {deltaStr}
+              </span>
+            ) : (
+              // null means there is no week-old snapshot to compare against yet. Saying
+              // so beats the old behaviour, which reported a confident "+0.0 this week".
+              <span className="text-sm font-mono text-slate-600" title="A 7-day comparison needs a snapshot from last week; the scheduler is still building one.">
+                — no 7d baseline yet
               </span>
             )}
           </div>
@@ -266,8 +276,24 @@ export default function Country() {
         </div>
       </div>
 
-      {/* 90-day history */}
-      {histData.length > 0 && (
+      {/* 90-day history — only drawn once there are enough points for a real trend */}
+      {!histSufficient && (
+        <div className="glass-card rounded-xl p-4">
+          <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-3">90-Day Risk Score History</h3>
+          <div className="flex flex-col items-center justify-center gap-2 text-center" style={{ height: 140 }}>
+            <div className="font-mono text-xs" style={{ color: '#a78bfa' }}>BUILDING HISTORY</div>
+            <div className="text-xs text-slate-500 max-w-md">
+              Scores are snapshotted every 6 hours. This chart appears once there is
+              enough history to show a real trend rather than a line drawn between two
+              distant points.
+            </div>
+            <div className="font-mono text-slate-600" style={{ fontSize: 10 }}>
+              {histData.length} snapshot{histData.length === 1 ? '' : 's'} so far
+            </div>
+          </div>
+        </div>
+      )}
+      {histSufficient && (
         <div className="glass-card rounded-xl p-4">
           <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-3">90-Day Risk Score History</h3>
           <ResponsiveContainer width="100%" height={140}>

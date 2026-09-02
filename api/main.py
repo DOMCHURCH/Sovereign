@@ -299,11 +299,25 @@ def get_country(iso3: str):
 def get_country_history(iso3: str):
     iso3 = iso3.upper()
     conn = get_conn()
+    # The chart is labelled "90-day", but this had no time filter at all and returned
+    # every snapshot ever written — so a 110-day-old bootstrap row was being plotted
+    # inside a 90-day window, joined to today by a straight line across a gap where no
+    # data exists. Bound the window and tell the client how much real history there is.
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=90)
     rows = conn.execute(
-        "SELECT score, tier, computed_at FROM sovereign_risk WHERE country_iso3 = ? ORDER BY computed_at ASC LIMIT 360",
-        [iso3],
+        """SELECT score, tier, computed_at FROM sovereign_risk
+           WHERE country_iso3 = ? AND computed_at >= ?
+           ORDER BY computed_at ASC LIMIT 360""",
+        [iso3, cutoff],
     ).fetchall()
-    return [{"score": r[0], "tier": r[1], "date": r[2].isoformat() if hasattr(r[2], "isoformat") else str(r[2])} for r in rows]
+    points = [
+        {"score": r[0], "tier": r[1],
+         "date": r[2].isoformat() if hasattr(r[2], "isoformat") else str(r[2])}
+        for r in rows
+    ]
+    # Snapshots land every 6h, so a day of uptime is ~4 points. Below that a line chart
+    # is noise pretending to be a trend.
+    return {"points": points, "sufficient": len(points) >= 4}
 
 
 def _get_newsapi_keys() -> list[str]:

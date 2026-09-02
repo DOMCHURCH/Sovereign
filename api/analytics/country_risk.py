@@ -152,7 +152,12 @@ def run() -> dict[str, float]:
     for iso3, row in df.iterrows():
         score = float(row["score"])
         tier = _tier(score)
-        delta = score - old_scores.get(iso3, score)
+        # No snapshot in the 7-10 day window means there is no baseline to compare
+        # against — which is NOT the same as "no change". Defaulting the baseline to the
+        # current score produced a confident 0.00 for every country and made the whole
+        # platform read as frozen. Emit null and let the UI say so.
+        baseline = old_scores.get(iso3)
+        delta = None if baseline is None else round(score - baseline, 2)
 
         sub_scores = {
             "political_instability": round(float(row["sub_political"]), 1),
@@ -161,7 +166,7 @@ def run() -> dict[str, float]:
             "sanctions_exposure": round(float(row["sub_sanctions"]), 1),
             "governance_deficit": round(float(row["sub_governance"]), 1),
             "sentiment_deterioration": round(float(row["sub_sentiment"]), 1),
-            "delta_7d": round(delta, 2),
+            "delta_7d": delta,
         }
 
         conn.execute(
