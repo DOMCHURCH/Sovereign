@@ -385,6 +385,32 @@ def _newsapi_fetch(params: dict) -> list[dict]:
 def get_country_news(iso3: str):
     iso3 = iso3.upper()
     country_name = COUNTRY_METADATA.get(iso3, (iso3, ""))[0]
+
+    # Read the ingested articles first. This endpoint used to go straight to NewsAPI, so
+    # with no NewsAPI key it returned nothing even when the RSS pipeline had already
+    # stored articles for the country — /api/news/feed showed 14 Russia items while the
+    # country page showed none. Fall through to NewsAPI only to top up.
+    try:
+        rows = get_conn().execute(
+            """SELECT title, summary, url, source, published_at
+               FROM news_articles WHERE iso3 = ?
+               ORDER BY published_at DESC LIMIT 8""",
+            [iso3],
+        ).fetchall()
+        if rows:
+            return [
+                {
+                    "title": r[0] or "",
+                    "description": r[1] or "",
+                    "url": r[2] or "",
+                    "source": r[3] or "",
+                    "published_at": r[4].isoformat() if hasattr(r[4], "isoformat") else str(r[4]),
+                }
+                for r in rows if r[0]
+            ]
+    except Exception:
+        pass  # fall through to the live fetch below
+
     from_date = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
     articles = _newsapi_fetch({
         "q": f'"{country_name}" economy OR sanctions OR politics OR crisis',
