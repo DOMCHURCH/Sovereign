@@ -37,10 +37,20 @@ GDELT_BASE = "http://data.gdeltproject.org/gdeltv2"
 FILES_TO_FETCH = 8
 REQUEST_TIMEOUT_S = 60
 
+# GDELT infers events from news text with a machine coder, and it produces false
+# positives: a single article can yield "Ethnic cleansing / Denmark" or "Air strike /
+# Virginia" because the coder matched phrasing and geocoded to a place the article
+# merely mentioned. Requiring corroboration from independent outlets removes most of
+# that. The cost is losing genuinely obscure incidents only one outlet covered, which
+# is the right trade for a feed presented as intelligence.
+MIN_SOURCES = 2
+# The gravest categories carry the most weight if wrong, so hold them to a higher bar.
+MIN_SOURCES_FOR_MAJOR = 3
+
 # Column positions in the GDELT 2.0 Events export (61 tab-separated fields, no header).
 C_ID, C_DAY = 0, 1
 C_EVENT_CODE, C_ROOT_CODE = 26, 28
-C_GOLDSTEIN, C_MENTIONS = 30, 31
+C_GOLDSTEIN, C_MENTIONS, C_SOURCES = 30, 31, 32
 C_PLACE, C_GEO_CC, C_LAT, C_LNG = 52, 53, 56, 57
 C_SOURCE_URL = 60
 
@@ -159,6 +169,12 @@ def _parse(url: str) -> list[dict]:
         except ValueError:
             mentions = 0
         try:
+            sources = int(f[C_SOURCES])
+        except ValueError:
+            sources = 0
+        if sources < (MIN_SOURCES_FOR_MAJOR if severity == "major" else MIN_SOURCES):
+            continue
+        try:
             goldstein = float(f[C_GOLDSTEIN])
         except ValueError:
             goldstein = None
@@ -174,6 +190,7 @@ def _parse(url: str) -> list[dict]:
             "lat": lat,
             "lng": lng,
             "mentions": mentions,
+            "sources": sources,
             "goldstein": goldstein,
             "source_url": f[C_SOURCE_URL].strip()[:500] or None,
         })
@@ -213,16 +230,17 @@ def run() -> int:
         conn.execute(
             """
             INSERT INTO events (id, event_date, cameo_code, category, severity,
-                                country_iso3, place_name, lat, lng, mentions,
+                                country_iso3, place_name, lat, lng, mentions, sources,
                                 goldstein, source_url, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
                 mentions   = GREATEST(events.mentions, excluded.mentions),
+                sources    = GREATEST(events.sources, excluded.sources),
                 fetched_at = excluded.fetched_at
             """,
             [r["id"], r["event_date"], r["cameo_code"], r["category"], r["severity"],
              r["country_iso3"], r["place_name"], r["lat"], r["lng"], r["mentions"],
-             r["goldstein"], r["source_url"], now],
+             r["sources"], r["goldstein"], r["source_url"], now],
         )
         written += 1
 

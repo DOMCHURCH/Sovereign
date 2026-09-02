@@ -188,6 +188,7 @@ def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
             lat             DOUBLE,
             lng             DOUBLE,
             mentions        INTEGER NOT NULL DEFAULT 0,
+            sources         INTEGER NOT NULL DEFAULT 0,
             goldstein       DOUBLE,
             source_url      VARCHAR,
             fetched_at      TIMESTAMP NOT NULL DEFAULT NOW()

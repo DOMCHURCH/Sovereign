@@ -510,15 +510,31 @@ def get_events(days: int = 7, iso3: str | None = None, severity: str | None = No
     if severity:
         where.append("severity = ?")
         args.append(severity.lower())
-    args.append(max(1, min(limit, 1000)))
+    # Over-fetch so the per-country cap below has a diverse pool to draw from.
+    args.append(max(1, min(limit, 1000)) * (1 if iso3 else 6))
 
     rows = conn.execute(
         f"""SELECT id, event_date, category, severity, country_iso3, place_name,
-                   lat, lng, mentions, goldstein, source_url
+                   lat, lng, mentions, goldstein, source_url, sources
             FROM events WHERE {' AND '.join(where)}
             ORDER BY event_date DESC, mentions DESC LIMIT ?""",
         args,
     ).fetchall()
+    # GDELT is heavily Anglophone: left alone, a global feed fills with US local crime
+    # because those stories carry the most sources. Cap per country so the feed shows
+    # geopolitical spread rather than one country's news cycle. Skipped when the caller
+    # asked for a specific country, where saturation is the point.
+    if not iso3:
+        per_country: dict = {}
+        capped = []
+        for r in rows:
+            key = r[4] or "??"
+            if per_country.get(key, 0) >= 6:
+                continue
+            per_country[key] = per_country.get(key, 0) + 1
+            capped.append(r)
+        rows = capped
+
     return [
         {
             "id": r[0],
@@ -533,6 +549,7 @@ def get_events(days: int = 7, iso3: str | None = None, severity: str | None = No
             "mentions": r[8],
             "goldstein": r[9],
             "url": r[10],
+            "sources": r[11],
         }
         for r in rows
     ]

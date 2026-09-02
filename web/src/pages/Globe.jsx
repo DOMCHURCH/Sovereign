@@ -652,7 +652,7 @@ export default function Globe() {
         </div>
         <div style="color:#f8fafc;font-size:13px;font-weight:700;margin-bottom:4px">${d.category}</div>
         <div style="color:#94a3b8;font-size:11px;line-height:1.45">${where || 'Location unspecified'}</div>
-        ${host ? `<div style="color:#64748b;font-size:10px;margin-top:7px;padding-top:6px;border-top:1px solid #1e1e2e">${host} · ${d.mentions} mentions</div>` : ''}
+        ${host ? `<div style="color:#64748b;font-size:10px;margin-top:7px;padding-top:6px;border-top:1px solid #1e1e2e">${host} · corroborated by ${d.sources} source${d.sources === 1 ? '' : 's'}</div>` : ''}
       </div>`
     }
     const color = CAT_COLORS[d.category] || '#ffd700'
