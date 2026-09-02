@@ -1381,12 +1381,19 @@ def run_ingest(background_tasks: BackgroundTasks, request: Request):
         raise HTTPException(401, "Invalid or missing X-Ingest-Token")
 
     def _run():
-        from ingest import world_bank, sanctions, markets, news
+        # Mirror the scheduler's 6-hourly stage list so a manual trigger and the
+        # automatic cycle produce the same snapshot. weather/rss/gdelt were absent
+        # here, making a manual run quietly narrower than the cycle it stands in for.
+        from ingest import world_bank, sanctions, markets, news, rss, gdelt
+        from ingest import weather as weather_ingest
         from analytics import country_risk, contagion, portfolio_impact, alerts, gti
         world_bank.run()
         sanctions.run()
         markets.run()
         news.run()
+        weather_ingest.run()
+        rss.run()
+        gdelt.run()
         country_risk.run()
         contagion.run()
         portfolio_impact.run()
