@@ -48,6 +48,7 @@ def get_conn() -> duckdb.DuckDBPyConnection:
         path = _runtime_db_path()
         conn = duckdb.connect(path)
         _init_schema(conn)   # CREATE TABLE IF NOT EXISTS — always safe
+        _migrate(conn)       # add columns to tables that predate them
         _local.conn = conn
     return conn
 
@@ -207,6 +208,28 @@ def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
             fetched_at      TIMESTAMP NOT NULL DEFAULT NOW()
         )
     """)
+
+
+def _migrate(conn: duckdb.DuckDBPyConnection) -> None:
+    """Add columns to tables that already exist on the volume.
+
+    CREATE TABLE IF NOT EXISTS silently does nothing when the table is already there, so
+    a new column never reaches a deployed database and every query naming it 500s. The
+    volume is persistent now, which means schema changes need real migrations.
+    """
+    for table, column, ddl in [
+        ("events", "sources", "INTEGER NOT NULL DEFAULT 0"),
+    ]:
+        try:
+            existing = {r[1] for r in conn.execute(f"PRAGMA table_info('{table}')").fetchall()}
+        except Exception:
+            continue  # table does not exist yet; CREATE TABLE above will include it
+        if column not in existing:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+                print(f"[db] migrated: {table}.{column} added", flush=True)
+            except Exception as e:
+                print(f"[db] migration {table}.{column} failed: {e}", flush=True)
 
 
 def log_ingest(source: str, status: str, rows: int = 0, error: str | None = None) -> None:
