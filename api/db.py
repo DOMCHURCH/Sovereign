@@ -218,7 +218,9 @@ def _migrate(conn: duckdb.DuckDBPyConnection) -> None:
     volume is persistent now, which means schema changes need real migrations.
     """
     for table, column, ddl in [
-        ("events", "sources", "INTEGER NOT NULL DEFAULT 0"),
+        # DuckDB rejects constraints on ADD COLUMN ("Adding columns with constraints
+        # not yet supported"), so migrate the bare type and backfill separately.
+        ("events", "sources", "INTEGER"),
     ]:
         try:
             existing = {r[1] for r in conn.execute(f"PRAGMA table_info('{table}')").fetchall()}
@@ -227,6 +229,7 @@ def _migrate(conn: duckdb.DuckDBPyConnection) -> None:
         if column not in existing:
             try:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+                conn.execute(f"UPDATE {table} SET {column} = 0 WHERE {column} IS NULL")
                 print(f"[db] migrated: {table}.{column} added", flush=True)
             except Exception as e:
                 print(f"[db] migration {table}.{column} failed: {e}", flush=True)
