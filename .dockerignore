@@ -1,0 +1,13 @@
+.git
+.github
+.vercel
+node_modules
+web/node_modules
+web/dist
+**/__pycache__
+*.pyc
+*.duckdb.wal
+.env
+.env.*
+shots*
+sovenv

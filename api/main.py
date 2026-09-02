@@ -6,7 +6,9 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from pydantic import BaseModel
 
 import sys
@@ -29,16 +31,21 @@ app = FastAPI(title="Sovereign API", version="1.0.0", docs_url="/api/docs", open
 _ALLOWED_ORIGINS = [
     o.strip() for o in os.getenv(
         "ALLOWED_ORIGINS",
-        "https://sovereign-rust-two.vercel.app,"
-        "https://sovereign-domchurchs-projects.vercel.app,"
-        "http://localhost:5173,http://127.0.0.1:5173",
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:4173,http://127.0.0.1:4173",
     ).split(",") if o.strip()
 ]
+
+# On Railway the frontend is served by this same process, so requests are same-origin and
+# never hit CORS at all. Include the public domain anyway for anything pointed at the API
+# directly. Railway injects this at runtime.
+_railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+if _railway_domain:
+    _ALLOWED_ORIGINS.append(f"https://{_railway_domain}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://sovereign-[a-z0-9-]+-domchurchs-projects\.vercel\.app",
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-API-Key"],
@@ -58,11 +65,42 @@ async def _startup():
     from auth import _turso_setup
     _turso_setup()
 
+_scheduler = None
+
+
+@app.on_event("startup")
+async def _startup_scheduler():
+    """Run the ingest scheduler where the database actually persists.
+
+    ingest/scheduler.py has always defined a 15-minute news/GTI cycle, a 6-hourly full
+    refresh and a 2-hourly weather job — but start_scheduler() was never called, because
+    on a serverless function the DuckDB file lives in a /tmp copy that is discarded when
+    the container freezes. With a real volume it does the job the README describes.
+    """
+    global _scheduler
+    if os.getenv("VERCEL") or not os.getenv("DATABASE_PATH", "").strip():
+        return
+    if os.getenv("DISABLE_SCHEDULER", "").strip() == "1":
+        return
+    try:
+        from ingest.scheduler import start_scheduler
+        _scheduler = start_scheduler()
+        print("[startup] ingest scheduler started", flush=True)
+    except Exception as e:
+        # A scheduler failure must not stop the API from serving the existing snapshot.
+        print(f"[startup] scheduler failed to start: {e}", flush=True)
+
+
+@app.on_event("shutdown")
+async def _shutdown_scheduler():
+    if _scheduler is not None:
+        _scheduler.shutdown(wait=False)
+
+
 @app.on_event("startup")
 async def _startup_ingest():
-    # On Vercel the DuckDB file lives in a per-container /tmp copy that is thrown away
-    # when the lambda freezes, so a cold-start ingest costs upstream rate limit for
-    # nothing. Only run it where the database actually persists (Render/local disk).
+    # Backfill on boot only if the snapshot is already stale; the scheduler handles
+    # everything after that.
     if os.getenv("VERCEL") or not os.getenv("DATABASE_PATH", "").strip():
         return
     import asyncio
@@ -1353,6 +1391,34 @@ async def analyst_endpoint(
 
 app.include_router(router)
 
-@app.get("/")
-def root():
-    return {"service": "Sovereign API", "version": "1.0.0", "docs": "/api/docs"}
+
+# ── Serve the built frontend from the same process ───────────────────────────
+# On Railway this is a single always-on service: FastAPI answers /api/* and hands
+# everything else to the React bundle. There is no CDN in front, so no CORS, no
+# VITE_API_URL, and one deploy instead of two.
+_WEB_DIST = Path(__file__).parent.parent / "web" / "dist"
+
+if _WEB_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_WEB_DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str):
+        """Serve real files where they exist, otherwise index.html for client routing.
+
+        /api/* is already claimed by the router above, which is matched first, so this
+        never shadows the API. Anything that looks like an API path but got here is a
+        genuine 404 and must not be answered with the HTML shell — that would turn a
+        typo'd endpoint into a silent 200.
+        """
+        if full_path.startswith("api/"):
+            raise HTTPException(404, "Not found")
+        candidate = (_WEB_DIST / full_path).resolve()
+        # Guard against ../ escaping the dist directory.
+        if candidate.is_file() and _WEB_DIST.resolve() in candidate.parents:
+            return FileResponse(candidate)
+        return FileResponse(_WEB_DIST / "index.html")
+
+else:
+    @app.get("/")
+    def root():
+        return {"service": "Sovereign API", "version": "1.0.0", "docs": "/api/docs"}

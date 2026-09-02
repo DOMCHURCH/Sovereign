@@ -16,9 +16,19 @@ _copy_lock = threading.Lock()
 
 
 def _runtime_db_path() -> str:
-    # 1. Explicit override — used on Render (DATABASE_PATH=/data/sovereign.duckdb)
+    # 1. Explicit override — a real persistent disk (Railway volume at /data).
     env_path = os.getenv("DATABASE_PATH", "").strip()
     if env_path:
+        target = Path(env_path)
+        # First boot on a fresh volume: the directory exists but the database does not.
+        # Without this the app would come up against an empty file and serve nothing
+        # until the first scheduled ingest finished, so seed it from the committed
+        # snapshot and let the scheduler take over from there.
+        if not target.exists() and _SEED_DB.exists():
+            with _copy_lock:
+                if not target.exists():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(_SEED_DB), str(target))
         return env_path
     # 2. Seed DB bundled with the repo — copy once to /tmp for mutable runtime use
     if _SEED_DB.exists():
