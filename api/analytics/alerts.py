@@ -1,7 +1,7 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from db import get_conn
+from db import get_conn, utcnow
 
 RULES = [
     {
@@ -39,7 +39,7 @@ RULES = [
 
 def run() -> int:
     conn = get_conn()
-    now = datetime.now(timezone.utc)
+    now = utcnow()
 
     risk_rows = conn.execute(
         """

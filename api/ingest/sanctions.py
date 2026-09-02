@@ -2,7 +2,7 @@ import io
 import csv
 import requests
 from datetime import datetime, timezone
-from db import get_conn, log_ingest
+from db import get_conn, log_ingest, utcnow
 
 # OFAC retired /downloads/sdn.csv — it now 404s, which silently froze the sanctions
 # table. The sanctions list service is the current canonical export; the legacy
@@ -65,7 +65,7 @@ PRIMARY_THRESHOLD = 50
 
 def run() -> int:
     conn = get_conn()
-    now = datetime.now(timezone.utc)
+    now = utcnow()
 
     content = None
     errors = []

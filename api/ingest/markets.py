@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone, timedelta
-from db import get_conn, log_ingest
+from db import get_conn, log_ingest, utcnow
 
 COUNTRY_ETFS = {
     "USA": "SPY", "CHN": "FXI", "JPN": "EWJ", "DEU": "EWG",
@@ -32,7 +32,7 @@ def _compute_features(prices: pd.Series) -> pd.DataFrame:
 
 def run() -> int:
     conn = get_conn()
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     end = now.date()
     start = end - timedelta(days=730)
 

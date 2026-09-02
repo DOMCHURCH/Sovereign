@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 from datetime import datetime, timezone
-from db import get_conn
+from db import get_conn, utcnow
 from ontology import COUNTRY_METADATA
 
 CHANNEL_LABELS = {
@@ -101,7 +101,7 @@ def propagate_shock(graph: nx.DiGraph, epicenter_iso3: str, shock_magnitude: flo
 
 def run() -> nx.DiGraph:
     conn = get_conn()
-    now = datetime.now(timezone.utc)
+    now = utcnow()
 
     from ontology import hydrate_countries
     countries = hydrate_countries(conn)

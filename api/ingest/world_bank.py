@@ -1,7 +1,7 @@
 import requests
 import os
 from datetime import datetime, timezone
-from db import get_conn, log_ingest
+from db import get_conn, log_ingest, utcnow
 
 INDICATORS = {
     "NY.GDP.MKTP.CD":        "gdp_usd",
@@ -72,7 +72,7 @@ def _fetch_fred(series_id: str) -> dict | None:
 
 def run() -> int:
     conn = get_conn()
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     rows_written = 0
 
     # 1. World Bank indicators (slower-moving governance/structural data)

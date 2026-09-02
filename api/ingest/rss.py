@@ -8,6 +8,9 @@ import sys
 import os
 from datetime import datetime, timezone, timedelta
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from db import utcnow
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 RSS_FEEDS = [
@@ -128,7 +131,9 @@ def _fetch_feed(name: str, url: str) -> list[dict]:
             published = None
             if hasattr(entry, "published_parsed") and entry.published_parsed:
                 import time
-                published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+                # published_parsed is already UTC; keep it naive so it compares against
+                # utcnow() and lands in the TIMESTAMP column without a zone conversion.
+                published = datetime(*entry.published_parsed[:6])
             text = f"{title} {summary}"
             iso3 = _detect_iso3(text)
             if not iso3:
@@ -138,7 +143,7 @@ def _fetch_feed(name: str, url: str) -> list[dict]:
                 "url": link[:1000],
                 "source": name,
                 "iso3": iso3,
-                "published_at": published or datetime.now(timezone.utc),
+                "published_at": published or utcnow(),
                 "sentiment": _vader_sentiment(text),
                 "event_type": _classify_event(text),
                 "summary": summary[:800],
@@ -149,9 +154,9 @@ def _fetch_feed(name: str, url: str) -> list[dict]:
 
 
 def run() -> int:
-    from db import get_conn, log_ingest
+    from db import get_conn, log_ingest, utcnow
     conn = get_conn()
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     cutoff = now - timedelta(days=3)
 
     all_articles = []

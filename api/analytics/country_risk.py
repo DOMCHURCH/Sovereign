@@ -2,7 +2,7 @@ import json
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone, timedelta
-from db import get_conn
+from db import get_conn, utcnow
 
 WEIGHTS = {
     "political_instability":   0.25,  # WGI PV.EST: lower score → higher instability
@@ -35,7 +35,7 @@ def _tier(score: float) -> str:
 
 def run() -> dict[str, float]:
     conn = get_conn()
-    now = datetime.now(timezone.utc)
+    now = utcnow()
 
     wb = conn.execute(
         "SELECT country_iso3, indicator, value FROM world_bank_indicators"

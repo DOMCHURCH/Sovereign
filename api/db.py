@@ -186,3 +186,15 @@ def log_ingest(source: str, status: str, rows: int = 0, error: str | None = None
         "INSERT INTO ingest_log (source, status, rows_written, error_msg) VALUES (?, ?, ?, ?)",
         [source, status, rows, error],
     )
+
+
+def utcnow() -> "datetime.datetime":
+    """Naive UTC 'now', for writing into TIMESTAMP columns.
+
+    DuckDB's TIMESTAMP is timezone-naive, and inserting a tz-aware datetime makes it
+    convert to the *server's local* zone first. Every writer used datetime.now(utc), so
+    the stored value silently became UTC on a UTC host and local time anywhere else —
+    which made the age of a snapshot depend on where it was generated. Always store UTC.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+    return _dt.now(_tz.utc).replace(tzinfo=None)

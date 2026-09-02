@@ -959,9 +959,10 @@ export default function Globe() {
           </h2>
         </div>
 
-        {/* shrink-0 so the sibling panels below cannot crush this list and slice a row
-            in half; it scrolls on its own once it runs out of room. */}
-        <div className="shrink-0 overflow-y-auto" style={{ maxHeight: 340 }}>
+        {/* shrink-0, no height cap: the sidebar itself is the scroll container, so every
+            row renders whole. Capping the height here sliced whichever row straddled the
+            boundary — the panel below just covered the remainder with no scrollbar. */}
+        <div className="shrink-0">
           {top10.map((c, i) => {
             const score = c.sovereign_risk_score ?? 0
             const barColor = TIER_COLORS[c.risk_tier] || '#64748b'
@@ -1009,7 +1010,7 @@ export default function Globe() {
 
         {/* GTI — Geopolitical Tension Index */}
         {gtiData.length > 0 && (
-          <div className="border-t" style={{ borderColor: '#1e1e2e' }}>
+          <div className="border-t shrink-0" style={{ borderColor: '#1e1e2e' }}>
             <div className="px-4 pt-3 pb-1">
               <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: '#f97316' }} />
@@ -1052,7 +1053,7 @@ export default function Globe() {
         )}
 
         {/* Section header: Live Alerts */}
-        <div className="border-t" style={{ borderColor: '#1e1e2e' }}>
+        <div className="border-t shrink-0" style={{ borderColor: '#1e1e2e' }}>
           <div className="px-4 pt-3 pb-1">
             <h2 className="text-xs font-mono text-slate-500 tracking-widest uppercase flex items-center gap-2">
               <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: '#fbbf24' }} />

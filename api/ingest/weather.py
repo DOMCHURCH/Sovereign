@@ -7,7 +7,7 @@ import requests
 from datetime import datetime, timezone
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from db import get_conn, log_ingest
+from db import get_conn, log_ingest, utcnow
 
 CAPITALS = {
     "AFG": (34.5, 69.2), "AGO": (-8.8, 13.2), "ARG": (-34.6, -58.4),
@@ -66,7 +66,7 @@ def _is_severe(code: int, temp_c: float) -> bool:
 
 def run() -> int:
     conn = get_conn()
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     rows_written = 0
 
     for iso3, (lat, lng) in CAPITALS.items():

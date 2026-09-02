@@ -13,10 +13,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 def run() -> int:
     """Run full news pipeline: RSS → Mediastack → GDELT."""
-    from db import get_conn, log_ingest
+    from db import get_conn, log_ingest, utcnow
 
     conn = get_conn()
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     rows_written = 0
 
     # 1. RSS pipeline (free, 11 feeds)

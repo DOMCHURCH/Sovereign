@@ -43,9 +43,9 @@ def _load_conflict_countries() -> dict[str, int]:
 
 
 def run() -> dict[str, dict]:
-    from db import get_conn, log_ingest
+    from db import get_conn, log_ingest, utcnow
     conn = get_conn()
-    now = datetime.now(timezone.utc)
+    now = utcnow()
 
     # 1. Sovereign risk scores (normalized 0-100 already)
     risk_rows = conn.execute(
