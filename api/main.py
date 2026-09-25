@@ -14,7 +14,7 @@ from pydantic import BaseModel
 import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
-from db import get_conn, log_ingest
+from db import get_conn, log_ingest, utcnow
 from ontology import hydrate_countries, COUNTRY_METADATA
 from analytics.portfolio_impact import estimate_portfolio_impact, DEMO_PORTFOLIO
 from analyst import stream_analyst
@@ -83,12 +83,30 @@ async def _startup_scheduler():
     if os.getenv("DISABLE_SCHEDULER", "").strip() == "1":
         return
     try:
+        import asyncio
         from ingest.scheduler import start_scheduler
-        _scheduler = start_scheduler()
-        print("[startup] ingest scheduler started", flush=True)
+        # The boot backfill runs as a scheduler job, not a bare thread: a side thread
+        # overlapped the scheduled jobs and nothing bounded it. The staleness check reads
+        # DuckDB, so keep it off the event loop.
+        backfill = await asyncio.to_thread(_snapshot_is_stale)
+        _scheduler = start_scheduler(backfill=backfill)
+        print(f"[startup] ingest scheduler started (backfill={backfill})", flush=True)
     except Exception as e:
         # A scheduler failure must not stop the API from serving the existing snapshot.
         print(f"[startup] scheduler failed to start: {e}", flush=True)
+
+
+def _snapshot_is_stale() -> bool:
+    """True when the last successful full refresh is over 6 hours old, or never ran."""
+    try:
+        row = get_conn().execute(
+            "SELECT MAX(ran_at) FROM ingest_log WHERE source = 'world_bank' AND status = 'ok'"
+        ).fetchone()
+    except Exception as e:
+        print(f"[startup] staleness check failed: {e}", flush=True)
+        return False
+    last_run = row[0] if row and row[0] else None
+    return last_run is None or (utcnow() - last_run).total_seconds() > 21600
 
 
 @app.on_event("shutdown")
@@ -96,39 +114,6 @@ async def _shutdown_scheduler():
     if _scheduler is not None:
         _scheduler.shutdown(wait=False)
 
-
-@app.on_event("startup")
-async def _startup_ingest():
-    # Backfill on boot only if the snapshot is already stale; the scheduler handles
-    # everything after that.
-    if os.getenv("VERCEL") or not os.getenv("DATABASE_PATH", "").strip():
-        return
-    import asyncio
-    async def _delayed():
-        await asyncio.sleep(5)  # let server finish starting first
-        try:
-            conn = get_conn()
-            row = conn.execute(
-                "SELECT MAX(ran_at) FROM ingest_log WHERE source = 'world_bank' AND status = 'ok'"
-            ).fetchone()
-            last_run = row[0] if row and row[0] else None
-            if last_run is None or (datetime.now(timezone.utc) - last_run).total_seconds() > 21600:
-                import threading
-                def _run():
-                    try:
-                        from ingest import world_bank, sanctions, markets, news
-                        from ingest import weather as weather_ingest
-                        from analytics import country_risk, contagion, portfolio_impact, alerts, gti
-                        world_bank.run(); sanctions.run(); markets.run(); news.run(); weather_ingest.run()
-                        country_risk.run(); contagion.run(); portfolio_impact.run()
-                        alerts.run(); gti.run()
-                        _conflict_cache["data"] = None; _conflict_cache["ts"] = 0
-                    except Exception:
-                        pass
-                threading.Thread(target=_run, daemon=True).start()
-        except Exception:
-            pass
-    asyncio.create_task(_delayed())
 
 # All API routes live under /api
 router = APIRouter(prefix="/api")

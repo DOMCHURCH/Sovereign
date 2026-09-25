@@ -104,11 +104,18 @@ def _classify_event(text: str) -> str:
     return best if scores[best] > 0 else "general"
 
 
+_sia = None
+
+
 def _vader_sentiment(text: str) -> float:
+    global _sia
     try:
         from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-        sia = SentimentIntensityAnalyzer()
-        return sia.polarity_scores(text)["compound"]
+        # Building the analyzer re-reads the whole lexicon from disk; do it once, not
+        # once per article.
+        if _sia is None:
+            _sia = SentimentIntensityAnalyzer()
+        return _sia.polarity_scores(text)["compound"]
     except ImportError:
         # Fallback: simple keyword score if vaderSentiment not installed
         negative = ["war", "attack", "crisis", "killed", "explosion", "coup", "sanctions"]
@@ -121,7 +128,13 @@ def _vader_sentiment(text: str) -> float:
 def _fetch_feed(name: str, url: str) -> list[dict]:
     try:
         import feedparser
-        feed = feedparser.parse(url)
+        import requests
+        # feedparser.parse(url) has no timeout, so one stalled feed would hang the whole
+        # 15-minute cycle. Fetch with a bound and hand feedparser the bytes.
+        resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0 (Sovereign RSS)"})
+        if not resp.ok:
+            return []
+        feed = feedparser.parse(resp.content)
         articles = []
         for entry in feed.entries[:20]:
             title = getattr(entry, "title", "") or ""
