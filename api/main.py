@@ -72,7 +72,7 @@ _scheduler = None
 async def _startup_scheduler():
     """Run the ingest scheduler where the database actually persists.
 
-    ingest/scheduler.py has always defined a 15-minute news/GTI cycle, a 6-hourly full
+    ingest/scheduler.py has always defined a fast news/GTI cycle (now hourly), a 6-hourly full
     refresh and a 2-hourly weather job — but start_scheduler() was never called, because
     on a serverless function the DuckDB file lives in a /tmp copy that is discarded when
     the container freezes. With a real volume it does the job the README describes.

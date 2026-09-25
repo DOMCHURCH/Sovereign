@@ -13,7 +13,7 @@ The platform runs three distinct intelligence workflows: macro sovereign risk sc
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Ingest (APScheduler, in-process)                           │
-│  15m: RSS + sentiment + GTI                                 │
+│  1h:  RSS + sentiment + GTI                                 │
 │   2h: weather                                               │
 │   6h: World Bank · OFAC SDN · yfinance ETFs · full rescore  │
 └────────────────────────┬────────────────────────────────────┘
@@ -137,7 +137,7 @@ between two distant observations.
 | World Bank WDI/WGI | GDP, inflation, debt, trade openness, political stability, corruption, rule of law | 6h |
 | OFAC SDN (sanctions list service) | Sanctioned entity counts by country, parsed from the Programme field | 6h |
 | yfinance (ETF proxies) | Daily returns, 21d realized vol, 30d cross-correlations | 6h |
-| RSS + VADER | Headline sentiment and event classification per country | 15m |
+| RSS + VADER | Headline sentiment and event classification per country | 1h |
 | Open-Meteo | Severe weather overlay | 2h |
 
 Conflict zones are a curated set, not a live feed — `/api/conflicts/source` reports

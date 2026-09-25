@@ -40,7 +40,7 @@ https://sovereign-production-0351.up.railway.app
 |---|---|
 | Backend | Python 3.13 + FastAPI |
 | Data warehouse | DuckDB on the Railway volume at /data |
-| Scheduler | APScheduler in-process — 15m news/GTI, 2h weather, 6h full refresh |
+| Scheduler | APScheduler in-process — 1h news/events/GTI, 2h weather, 6h full refresh |
 | Analytics | pandas, numpy, statsmodels, scipy, scikit-learn, networkx |
 | LLM | Groq, model **discovered** from /models at runtime — never pin an ID, two providers have retired ours |
 | Frontend | React 18 + Vite + Tailwind CSS + Recharts |

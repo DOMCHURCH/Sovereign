@@ -1,6 +1,6 @@
 """
 Geopolitical Tension Index (GTI) — inspired by GeoPulse.
-Composite fast-moving score (0–100) per country, updated every 15 minutes.
+Composite fast-moving score (0–100) per country, updated every hour.
 Components:
   - risk_score (35%)      from sovereign_risk table
   - conflict_activity (30%) from active conflicts touching this country

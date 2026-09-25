@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # three weeks (~$13 of CPU). A Python thread cannot be killed, so the only real bound is
 # to exit the process and let Railway's restart policy bring up a clean one.
 DEADLINES_S = {
-    "news_gti": 20 * 60,
+    "news_gti": 30 * 60,
     "weather": 20 * 60,
     "full_refresh": 2 * 60 * 60,
 }
@@ -61,10 +61,12 @@ def _watchdog():
 
 
 def _run_news_and_gti():
-    """Fast cycle: news + events + GTI every 15 minutes.
+    """Fast cycle: news + events + GTI every hour.
 
-    Events belong on the fast cycle, not the 6-hourly one: GDELT publishes a new export
-    every 15 minutes and the whole point of the feed is that it is current.
+    Events belong on the fast cycle, not the 6-hourly one: the feed should be current.
+    GDELT publishes every 15 minutes, but the site gets little traffic, so hourly is
+    fresh enough and costs a quarter of the CPU. events.py reads the last 2 hours of
+    exports, so an hourly run still sees every file.
     """
     from ingest import news, events
     from analytics import gti
@@ -84,7 +86,7 @@ def _run_full():
     news.run()
     weather_ingest.run()
     # After news.run(), so GDELT sees what RSS already covered and only fills the gaps.
-    # Rate-limited to one request per 5s, so this is 6-hourly work, never 15-minute.
+    # Rate-limited to one request per 5s, so this is 6-hourly work, never hourly.
     gdelt.run()
     country_risk.run()
     contagion.run()
@@ -115,10 +117,10 @@ def start_scheduler(backfill: bool = False) -> BackgroundScheduler:
         job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 30 * 60},
     )
 
-    # Fast cycle: news sentiment + GTI every 15 minutes
+    # Fast cycle: news sentiment + events + GTI every hour
     scheduler.add_job(
         _tracked("news_gti", _run_news_and_gti),
-        IntervalTrigger(minutes=15),
+        IntervalTrigger(hours=1),
         id="news_gti",
         replace_existing=True,
     )
