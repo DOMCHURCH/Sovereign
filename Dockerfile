@@ -22,6 +22,9 @@ FROM python:3.13-slim
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     DATABASE_PATH=/data/sovereign.duckdb
+# glibc gives each thread its own malloc arena and rarely returns them; with the
+# scheduler plus uvicorn's threadpool that is a known slow RSS climb on Linux.
+ENV MALLOC_ARENA_MAX=2
 
 WORKDIR /app
 

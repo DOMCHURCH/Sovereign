@@ -27,6 +27,36 @@ DEADLINES_S = {
 _running: dict[str, float] = {}
 _running_lock = threading.Lock()
 
+# Railway kills the container at 8 GB with no traceback, mid-write. Restarting ourselves
+# between jobs, after a checkpoint, is the clean version of the same outcome.
+RSS_RESTART_MB = int(os.getenv("RSS_RESTART_MB", "3000"))
+
+
+def _rss_mb() -> float | None:
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024
+    except OSError:
+        pass  # not Linux
+    return None
+
+
+def _memory_report() -> str:
+    """RSS next to DuckDB's own accounting: if RSS climbs while DuckDB stays flat, the
+    growth is outside DuckDB (allocator retention or Python objects)."""
+    import gc
+    rss = _rss_mb()
+    try:
+        from db import get_conn
+        duck = get_conn().execute(
+            "SELECT sum(memory_usage_bytes) FROM duckdb_memory()").fetchone()[0] / 1e6
+    except Exception:
+        duck = -1.0
+    rss_txt = f"{rss:.0f}MB" if rss is not None else "n/a"
+    return f"rss={rss_txt} duckdb={duck:.0f}MB pyobjs={len(gc.get_objects())}"
+
 
 def _tracked(job_id: str, fn):
     def wrapper():
@@ -36,12 +66,24 @@ def _tracked(job_id: str, fn):
         print(f"[scheduler] {job_id} started", flush=True)
         try:
             fn()
-            print(f"[scheduler] {job_id} finished in {time.monotonic() - started:.0f}s", flush=True)
+            print(f"[scheduler] {job_id} finished in {time.monotonic() - started:.0f}s "
+                  f"[{_memory_report()}]", flush=True)
         except Exception:
             print(f"[scheduler] {job_id} failed:\n{traceback.format_exc()}", flush=True)
         finally:
             with _running_lock:
                 _running.pop(job_id, None)
+        rss = _rss_mb()
+        if rss is not None and rss > RSS_RESTART_MB:
+            print(f"[scheduler] rss {rss:.0f}MB > {RSS_RESTART_MB}MB; checkpointing and "
+                  "exiting so the container restarts clean", flush=True)
+            try:
+                from db import get_conn
+                get_conn().execute("CHECKPOINT")
+            except Exception:
+                traceback.print_exc()
+            sys.stdout.flush()
+            os._exit(1)
     return wrapper
 
 
@@ -143,6 +185,13 @@ def start_scheduler(backfill: bool = False) -> BackgroundScheduler:
         id="weather",
         replace_existing=True,
     )
+
+    try:
+        from db import get_conn
+        limit = get_conn().execute("SELECT current_setting('memory_limit')").fetchone()[0]
+        print(f"[scheduler] duckdb memory_limit={limit} [{_memory_report()}]", flush=True)
+    except Exception:
+        traceback.print_exc()
 
     threading.Thread(target=_watchdog, name="scheduler-watchdog", daemon=True).start()
     scheduler.start()
