@@ -4,6 +4,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timedelta, timezone
 import faulthandler
+import gc
 import signal
 import sys
 import os
@@ -42,6 +43,9 @@ def _tracked(job_id: str, fn):
         finally:
             with _running_lock:
                 _running.pop(job_id, None)
+            # The refresh builds pandas frames and response bodies that reference each
+            # other; free them now rather than whenever the collector next gets around to it.
+            gc.collect()
     return wrapper
 
 

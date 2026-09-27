@@ -19,8 +19,13 @@ RUN npm run build
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
 FROM python:3.13-slim
 
+# MALLOC_ARENA_MAX: glibc gives every thread its own malloc arena, and with uvicorn's
+# threadpool, the scheduler and DuckDB's workers the freed memory stays fragmented across
+# them instead of returning to the OS. RSS ratchets up each refresh until Railway OOM-kills
+# the container; two arenas keeps it flat for a negligible cost in contention.
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    MALLOC_ARENA_MAX=2 \
     DATABASE_PATH=/data/sovereign.duckdb
 
 WORKDIR /app
