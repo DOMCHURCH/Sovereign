@@ -22,6 +22,7 @@ DEADLINES_S = {
     "news_gti": 30 * 60,
     "weather": 20 * 60,
     "full_refresh": 2 * 60 * 60,
+    "boot_checkpoint": 10 * 60,
 }
 
 _running: dict[str, float] = {}
@@ -157,6 +158,22 @@ def start_scheduler(backfill: bool = False) -> BackgroundScheduler:
         timezone="UTC",
         executors={"default": ThreadPoolExecutor(1)},
         job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 30 * 60},
+    )
+
+    # After every unclean exit (OOM kill, watchdog) the next boot's first
+    # `INSERT ... ON CONFLICT (url)` into news_articles hung until the watchdog fired, boot
+    # after boot, and only cleared once a full refresh happened to run first. Folding the
+    # replayed WAL into the file before any job writes breaks that loop. It runs as a job
+    # so the watchdog bounds it too.
+    def _checkpoint():
+        from db import get_conn
+        get_conn().execute("CHECKPOINT")
+
+    scheduler.add_job(
+        _tracked("boot_checkpoint", _checkpoint),
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=5),
+        id="boot_checkpoint",
+        replace_existing=True,
     )
 
     # Fast cycle: news sentiment + events + GTI every hour
