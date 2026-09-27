@@ -15,11 +15,16 @@ COMMODITIES = {
     "oil": "USO", "gold": "GLD", "natgas": "UNG", "wheat": "WEAT", "copper": "CPER",
 }
 
-ALL_TICKERS = list(COUNTRY_ETFS.values()) + list(COMMODITIES.values())
+# iShares closed ERUS in 2022 after Russian securities were frozen. The mapping stays so
+# the rest of the app still knows RUS had an ETF, but downloading it only ever returned a
+# 404 and three lines of log noise every six hours.
+DELISTED = {"ERUS"}
+
+ALL_TICKERS = [t for t in list(COUNTRY_ETFS.values()) + list(COMMODITIES.values()) if t not in DELISTED]
 
 
 def _compute_features(prices: pd.Series) -> pd.DataFrame:
-    ret = prices.pct_change().dropna()
+    ret = prices.pct_change(fill_method=None).dropna()
     cum_1y = prices / prices.shift(252) - 1
     vol_21d = ret.rolling(21).std() * np.sqrt(252)
     df = pd.DataFrame({
@@ -85,7 +90,7 @@ def run() -> int:
 def _compute_correlations(conn, close: pd.DataFrame, as_of) -> None:
     etf_tickers = list(COUNTRY_ETFS.values())
     available = [t for t in etf_tickers if t in close.columns]
-    returns = close[available].pct_change().dropna()
+    returns = close[available].pct_change(fill_method=None).dropna()
 
     window = returns.tail(30)
     if len(window) < 10:
