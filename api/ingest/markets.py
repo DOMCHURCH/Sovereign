@@ -54,33 +54,39 @@ def run() -> int:
 
     close = data["Close"] if "Close" in data.columns else data
 
+    frames = []
     for ticker in ALL_TICKERS:
         if ticker not in close.columns:
             continue
         prices = close[ticker].dropna()
         if prices.empty:
             continue
-
         feat = _compute_features(prices)
-        for date, row in feat.iterrows():
+        feat.insert(0, "ticker", ticker)
+        frames.append(feat)
+
+    if frames:
+        # One set-based upsert, not ~12k single-row autocommit statements. The row-by-row
+        # loop was the last thing running when the container was OOM-killed, and every one
+        # of those commits leaves DuckDB its own undo/version state to hold until checkpoint.
+        batch = pd.concat(frames).rename_axis("date").reset_index()
+        batch["date"] = pd.to_datetime(batch["date"]).dt.date
+        batch = batch[["ticker", "date", "daily_return", "cumulative_1y", "volatility_21d"]]
+        conn.register("market_batch", batch)
+        try:
             conn.execute(
                 """
                 INSERT INTO market_returns (ticker, date, daily_return, cumulative_1y, volatility_21d)
-                VALUES (?, ?, ?, ?, ?)
+                SELECT ticker, date, daily_return, cumulative_1y, volatility_21d FROM market_batch
                 ON CONFLICT (ticker, date) DO UPDATE SET
                     daily_return   = excluded.daily_return,
                     cumulative_1y  = excluded.cumulative_1y,
                     volatility_21d = excluded.volatility_21d
-                """,
-                [
-                    ticker,
-                    date.date() if hasattr(date, "date") else date,
-                    None if np.isnan(row.daily_return) else float(row.daily_return),
-                    None if np.isnan(row.cumulative_1y) else float(row.cumulative_1y),
-                    None if np.isnan(row.volatility_21d) else float(row.volatility_21d),
-                ],
+                """
             )
-            rows_written += 1
+        finally:
+            conn.unregister("market_batch")
+        rows_written = len(batch)
 
     _compute_correlations(conn, close, end)
     log_ingest("markets", "ok", rows_written)

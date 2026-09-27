@@ -54,7 +54,11 @@ def get_conn() -> duckdb.DuckDBPyConnection:
 
 
 def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
-    conn.execute("PRAGMA threads=4")
+    # DuckDB sizes its buffer pool to 80% of the RAM it can *see*, which on Railway is the
+    # host's, not the plan's. Left alone it will happily grow past the container limit and
+    # get the whole service OOM-killed mid-refresh. The database is ~10 MB; this is plenty.
+    conn.execute(f"SET memory_limit='{os.getenv('DUCKDB_MEMORY_LIMIT', '256MB')}'")
+    conn.execute(f"SET threads={int(os.getenv('DUCKDB_THREADS', '2'))}")
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS world_bank_indicators (
