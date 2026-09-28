@@ -4,6 +4,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timedelta, timezone
 import faulthandler
+import gc
 import signal
 import sys
 import os
@@ -47,7 +48,6 @@ def _rss_mb() -> float | None:
 def _memory_report() -> str:
     """RSS next to DuckDB's own accounting: if RSS climbs while DuckDB stays flat, the
     growth is outside DuckDB (allocator retention or Python objects)."""
-    import gc
     rss = _rss_mb()
     try:
         from db import get_conn
@@ -74,6 +74,9 @@ def _tracked(job_id: str, fn):
         finally:
             with _running_lock:
                 _running.pop(job_id, None)
+            # The refresh builds pandas frames and response bodies that reference each
+            # other; free them now rather than whenever the collector next gets around to it.
+            gc.collect()
         rss = _rss_mb()
         if rss is not None and rss > RSS_RESTART_MB:
             print(f"[scheduler] rss {rss:.0f}MB > {RSS_RESTART_MB}MB; checkpointing and "

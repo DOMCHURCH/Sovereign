@@ -54,11 +54,12 @@ def get_conn() -> duckdb.DuckDBPyConnection:
 
 
 def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
-    conn.execute("PRAGMA threads=4")
-    # Without a cap DuckDB sizes its buffer pool from the host's RAM, not the container's.
-    # Production grew ~1.5 GB per full refresh until Railway OOM-killed it at 8 GB. Past
-    # the cap DuckDB spills to <db>.tmp on the volume instead of failing the query.
+    # DuckDB sizes its buffer pool to 80% of the RAM it can *see*, which on Railway is the
+    # host's, not the plan's. Production grew ~1.5 GB per full refresh until Railway
+    # OOM-killed it at 8 GB. The volume's database is ~270 MB (the seed is 11 MB); past the
+    # cap DuckDB spills to <db>.tmp on the volume instead of failing the query.
     conn.execute(f"SET memory_limit='{os.getenv('DUCKDB_MEMORY_LIMIT', '1GB')}'")
+    conn.execute(f"SET threads={int(os.getenv('DUCKDB_THREADS', '2'))}")
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS world_bank_indicators (
